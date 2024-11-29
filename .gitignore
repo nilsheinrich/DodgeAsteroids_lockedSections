@@ -1,0 +1,7 @@
+# ignore
+.idea
+__pycache__
+**/.DS_Store
+logs/old
+data/*
+.Rhistory

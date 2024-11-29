@@ -1,0 +1,12 @@
+Try to avoid crashing into oncoming obstacles or walls.
+Use [Y] to move to the left and [M] to move to the right.
+Sometimes you will not have full control over the spaceship.
+You will encounter drift that will push you in either direction
+as well as input noise that will make your steering inconsistent.
+Before each different section in the level, the walls become narrower.
+Here you must steer to the horizontal center of the screen to avoid crashing.
+You will now get the opportunity to train a bit. 
+After a successful training run the experiment will start.
+Good luck pilot!
+
+Press SPACEBAR to continue
