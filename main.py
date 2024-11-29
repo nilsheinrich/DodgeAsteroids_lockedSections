@@ -4,7 +4,6 @@ import sys
 import pygame.display
 from pygame import VIDEORESIZE
 
-from config import pre_trial_steps, observation_space_size_x, observation_space_size_y, scaling, edge
 from helper_functions import *
 from level_setup import *
 
@@ -13,7 +12,6 @@ def run_visualization(surface, scaling=1, FPS=30,
                       obstacles_lists_file='object_list_0.csv',
                       drift_ranges_file='drift_ranges_0.csv',
                       wall_list_file='walls_dict_0.csv',
-                      input_noise_magnitude=0, input_noise_threshold=0,
                       drift_enabled=True, trial=0, attempt=0, n_run=0, code='test'):
     """
     :param surface: argument for specifying pygame.display object
@@ -22,8 +20,6 @@ def run_visualization(surface, scaling=1, FPS=30,
     :param obstacles_lists_file: file for list of obstacles. Has to be in logs repository
     :param drift_ranges_file: file for drift ranges. Has to be in logs repository
     :param wall_list_file: file with wall positions on every y position in level
-    :param input_noise_magnitude: input noise imposed on player throughout level
-    :param input_noise_threshold: y pos in level for input noise onset
     :param drift_enabled: drift tiles in level vs. no drift tiles
     :param trial: player movements of which trial (.csv file in logs) to be visualized
     :param attempt: attempts for this specific trial
@@ -48,8 +44,7 @@ def run_visualization(surface, scaling=1, FPS=30,
 
     # running through game loop
     level = Level(wall_list=wall_list, obstacles_list=obstacles_list,
-                  player_starting_position=player_starting_position, input_noise_magnitude=input_noise_magnitude,
-                  input_noise_threshold=input_noise_threshold, drift_ranges=drift_ranges,
+                  player_starting_position=player_starting_position, drift_ranges=drift_ranges,
                   drift_enabled=drift_enabled, screen=surface, scaling=scaling, n_run=n_run,
                   trial=trial, attempt=attempt, code=code, FPS=FPS)
 
@@ -93,6 +88,5 @@ def run_pygame(surface, scaling, FPS, player_positions, level):
 
         pygame.display.update()
         clock.tick(FPS)
-
 
     return level_done

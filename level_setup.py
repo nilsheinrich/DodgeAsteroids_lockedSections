@@ -1,5 +1,4 @@
 import pygame
-import time
 import numpy as np
 import pandas as pd
 import random
@@ -12,7 +11,7 @@ from ingame_objects.lines import Line
 from displays import display_soc_question
 from config import *
 
-from draw_transparent_shapes import draw_rect_alpha, draw_polygon_alpha, draw_circle_alpha
+from draw_transparent_shapes import draw_rect_alpha, draw_polygon_alpha
 
 display_keys = False
 question_soc = True
@@ -20,7 +19,7 @@ question_soc = True
 
 class Level:
     def __init__(self, wall_list, obstacles_list, player_starting_position, drift_ranges, screen, scaling, code, FPS=30,
-                 n_run=0, trial=0, attempt=0, input_noise_magnitude=0, input_noise_threshold=0, drift_enabled=False):
+                 n_run=0, trial=0, attempt=0, drift_enabled=False):
 
         # experiment information
         self.code = code
@@ -54,11 +53,6 @@ class Level:
         # Whether drift tiles appear and actually impose drift depends on this variable
         self.drift_enabled = drift_enabled
 
-        # threshold and magnitude for imposing input noise on agent (is updated by subtracting step size)
-        self.input_noise_threshold = input_noise_threshold*scaling
-        self.input_noise_magnitude = input_noise_magnitude
-        self.input_noise_on = False
-
         # n_run indicating the number of trials after starting the program (used to differentiate data files)
         self.n_run = n_run
 
@@ -78,11 +72,15 @@ class Level:
 
         # pandas Dataframe in which data of each frame will be stored
         self.columns = ['trial', 'attempt', 'time_played', 'level_size_y', 'player_pos', 'collision', 'current_input',
-                        'drift_enabled', 'current_drift', 'level_done', 'input_noise_magnitude', 'input_noise_on',
+                        'drift_enabled', 'current_drift', 'level_done',
                         'visible_obstacles', 'last_walls_tile', 'adjacent_wall_tiles_x_pos', 'visible_drift_tiles',
                         'SoC']
 
         self.data = pd.DataFrame(columns=self.columns)
+        # convert to boolean where necessary
+        self.data["collision"] = self.data["collision"].astype(bool)
+        self.data["drift_enabled"] = self.data["drift_enabled"].astype(bool)
+        self.data["level_done"] = self.data["level_done"].astype(bool)
 
     def setup_level(self, wall_list, obstacles_list, player_starting_position, drift_ranges, drift_enabled, scaling):
         self.walls = pygame.sprite.Group()
@@ -142,20 +140,7 @@ class Level:
         self.finish_line.add(finish_line_tile)
 
     def get_input(self):
-        # input noise
-        player = self.player.sprite
-        input_noise = 0
-        # input noise magnitude can be any float which reflects the magnitude of actual displacement
-        # at the end of the left or right step. The magnitude directly translates to the sd of the normal distribution
-        # the displacement is sampled from.
-        if player.rect.y > self.input_noise_threshold:
-            self.input_noise_on = True
-            mu = 0
-            sigma = self.input_noise_magnitude
-            input_noise = np.random.normal(mu, sigma, 1)
-        else:
-            self.input_noise_on = False
-        #############################
+
         # reset transparency for keys
         self.transparency_left = 90
         self.transparency_right = 90
@@ -169,18 +154,23 @@ class Level:
             self.direction.x = 0
         elif keys[pygame.K_m]:  # K_m vs. K_RIGHT
             self.current_input = 'Right'
-            self.direction.x = -1 + input_noise
+            self.direction.x = -1
             self.transparency_right = 150
         elif keys[pygame.K_y]:  # K_y vs. K_LEFT
             self.current_input = 'Left'
-            self.direction.x = 1 + input_noise
+            self.direction.x = 1
             self.transparency_left = 150
         else:
             self.current_input = None
             self.direction.x = 0
 
     def update(self):
-        self.get_input()
+        # if there is drift, then no input
+        if self.drift.x == 0:
+            self.get_input()
+        else:
+            self.direction.x = 0
+
         self.horizontal_movement = self.direction.x + self.drift.x  # compute horizontal movement with drift
 
     def check_for_collision(self):
@@ -189,7 +179,9 @@ class Level:
 
         # checking for general collision with any obstacles or walls or if spaceship jumped outside of game boarders;
         # collidelist will return index if collision and -1 if not
-        if player.rect.collidelist(self.comets.sprites()) > -1 or player.rect.collidelist(self.walls.sprites()) > -1 or player.rect.left < self.last_wall_pos[0] or player.rect.right > self.last_wall_pos[1]:
+        if player.rect.collidelist(self.comets.sprites()) > -1 or player.rect.collidelist(
+                self.walls.sprites()) > -1 or player.rect.left < self.last_wall_pos[0] or player.rect.right > \
+                self.last_wall_pos[1]:
             self.frames_with_collision += 1
         else:
             self.frames_with_collision = 0
@@ -249,8 +241,6 @@ class Level:
         frame_data.drift_enabled = self.drift_enabled
         frame_data.current_drift = self.drift.x
         frame_data.level_done = self.level_done
-        frame_data.input_noise_magnitude = self.input_noise_magnitude
-        frame_data.input_noise_on = self.input_noise_on
 
         frame_data.time_played = self.time_played
         frame_data.trial = self.trial
@@ -369,9 +359,6 @@ class Level:
                 self.drift_tiles.update(velocity, scaling, self.horizontal_movement)
                 self.particles.update(velocity, scaling, self.horizontal_movement)
                 self.finish_line.update(velocity, scaling, self.horizontal_movement)
-
-                # update input_noise threshold
-                self.input_noise_threshold -= 1 * scaling * velocity  # same updating as for all in-game objects
 
             # check for collision
             self.check_for_collision()

@@ -1,7 +1,4 @@
-import pygame.display
-import time
 import random
-import os
 import itertools
 from main import run_visualization
 from displays import *
@@ -24,11 +21,9 @@ screen_height = observation_space_size_y * scaling
 screen = pygame.display.set_mode((screen_width, screen_height))  # ,pygame.FULLSCREEN vs. pygame.RESIZABLE
 
 # initialize practice procedure
-# practice_trials = ['training1', 'training2', 'training3', 'training4', 'training5']
 practice_trials = ['training1']
 practice_drift_enabled_args = [False]  # [False, False, False]
-practice_input_noise_args = [0]  # [0, 0, 0]
-practice_args_list = [practice_trials, practice_drift_enabled_args, practice_input_noise_args]
+practice_args_list = [practice_trials, practice_drift_enabled_args]
 practice_arg_combs = list(itertools.product(*practice_args_list))
 # COMING: HAVE all args combined only with the exact iterable to have more control over subsequent practice trials
 practice_attempt_dict = dict.fromkeys(practice_arg_combs, 0)  # every trial at 0 attempts
@@ -42,17 +37,13 @@ trials = [3]
 
 # drift enabled
 # drift_enabled_args = [True, False]
-drift_enabled_args = [False]
-
-# input noise
-# input_noise_args = [0, 0.5, 1, 1.5, 2]
-input_noise_args = [0]
+drift_enabled_args = [True]
 
 # create list of all possible combinations of level and control manipulations
-args_list = [trials, drift_enabled_args, input_noise_args]
+args_list = [trials, drift_enabled_args]
 arg_combs = list(itertools.product(*args_list))
 # order of args:
-# [0]: trial; [1]: drift; [2]: input noise
+# [0]: trial; [1]: drift
 
 # attempts_dict for monitoring attempts per trial
 attempt_dict = dict.fromkeys(arg_combs, 0)  # every trial at 0 attempts
@@ -91,8 +82,6 @@ while not quit:
                                                    obstacles_lists_file=f'object_list_{practice_trial[0]}.csv',
                                                    drift_ranges_file=f'drift_ranges_{practice_trial[0]}.csv',
                                                    wall_list_file=f'walls_dict_{practice_trial[0]}.csv',
-                                                   input_noise_magnitude=practice_trial[2],
-                                                   input_noise_threshold=0,
                                                    drift_enabled=practice_trial[1],
                                                    trial=practice_trial[0],
                                                    attempt=practice_attempt_dict[practice_trial]+1,
@@ -109,7 +98,6 @@ while not quit:
                                                    obstacles_lists_file=f'object_list_{trial[0]}.csv',
                                                    drift_ranges_file=f'drift_ranges_{trial[0]}.csv',
                                                    wall_list_file=f'walls_dict_{trial[0]}.csv',
-                                                   input_noise_magnitude=trial[2],
                                                    drift_enabled=trial[1],
                                                    trial=trial[0],
                                                    attempt=attempt_dict[trial]+1,

@@ -16,11 +16,6 @@ particle_sizes = (2/16, 3/16, 4/16)
 # drift = 0: leftwards drift
 # drift = 2: rightwards drift
 
-# input_noise_mapping
-# input noise = none: ...
-# input noise = weak: sigma = 0.5
-# input noise = weak: sigma = 1.0
-
 
 # agent related parameters
 agent_size_x, agent_size_y = 2, 2
@@ -29,7 +24,6 @@ pre_trial_steps = 20  # steps spaceship has to take to reach starting_position i
 
 # upscaling for visualization on screen
 scaling = 14  # 19  # 20
-scaling_tiny_vis = 2
 
 # edge size for screen beyond walls and bottom
 edge = 28  # 28 perfect for large screen with scaling = 20
