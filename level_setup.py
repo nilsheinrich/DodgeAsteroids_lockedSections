@@ -8,7 +8,7 @@ from ingame_objects.walls import Wall
 from ingame_objects.drift_tiles import DriftTile
 from ingame_objects.particles import Particle
 from ingame_objects.lines import Line
-from displays import display_soc_question
+from displays import display_soc_question, display_prior_question
 from config import *
 
 from draw_transparent_shapes import draw_rect_alpha, draw_polygon_alpha
@@ -24,6 +24,8 @@ class Level:
         # experiment information
         self.code = code
 
+        # prior belief for level
+        self.prior = None
         # sense of control during level
         self.SoC = None
 
@@ -74,7 +76,7 @@ class Level:
         self.columns = ['trial', 'attempt', 'time_played', 'level_size_y', 'player_pos', 'collision', 'current_input',
                         'drift_enabled', 'current_drift', 'level_done',
                         'visible_obstacles', 'last_walls_tile', 'adjacent_wall_tiles_x_pos', 'visible_drift_tiles',
-                        'SoC']
+                        'prior', 'SoC']
 
         self.data = pd.DataFrame(columns=self.columns)
         # convert to boolean where necessary
@@ -230,6 +232,23 @@ class Level:
             self.SoC = 7
         return self.SoC
 
+    def get_prior_response(self):
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_1]:
+            self.prior = 1
+        if keys[pygame.K_2]:
+            self.prior = 2
+        if keys[pygame.K_3]:
+            self.prior = 3
+        if keys[pygame.K_4]:
+            self.prior = 4
+        if keys[pygame.K_5]:
+            self.prior = 5
+        if keys[pygame.K_6]:
+            self.prior = 6
+        if keys[pygame.K_7]:
+            self.prior = 7
+
     def get_data(self, scaling):
 
         frame_data = pd.DataFrame(columns=self.columns)
@@ -285,6 +304,7 @@ class Level:
 
         # append everything to pandas DataFrame
         self.data = pd.concat([self.data, frame_data], ignore_index=True)
+        self.data.prior = self.prior
         self.data.SoC = self.SoC
 
     def run(self, time_played, player_position, scaling):
@@ -344,52 +364,60 @@ class Level:
         else:
             self.level_done = False
 
-            player.animate(self.current_input)
+            # ask for prior
 
-            self.update()
+            if self.prior:
+                player.animate(self.current_input)
 
-            if player.rect.y < player_position[1]:
-                player.approach(velocity, scaling)
-                pass
-            if player.rect.y >= player_position[1]:
-                # update sprite positions
-                # update level tiles
-                self.comets.update(velocity, scaling, self.horizontal_movement)
-                self.walls.update(velocity, scaling, self.horizontal_movement)
-                self.drift_tiles.update(velocity, scaling, self.horizontal_movement)
-                self.particles.update(velocity, scaling, self.horizontal_movement)
-                self.finish_line.update(velocity, scaling, self.horizontal_movement)
+                self.update()
 
-            # check for collision
-            self.check_for_collision()
-            # check for drift
-            self.check_for_drift()
+                if player.rect.y < player_position[1]:
+                    player.approach(velocity, scaling)
+                    pass
+                if player.rect.y >= player_position[1]:
+                    # update sprite positions
+                    # update level tiles
+                    self.comets.update(velocity, scaling, self.horizontal_movement)
+                    self.walls.update(velocity, scaling, self.horizontal_movement)
+                    self.drift_tiles.update(velocity, scaling, self.horizontal_movement)
+                    self.particles.update(velocity, scaling, self.horizontal_movement)
+                    self.finish_line.update(velocity, scaling, self.horizontal_movement)
 
-            # draw sprites
-            # draw comets and tiles
-            self.particles.draw(self.display_surface)
-            self.comets.draw(self.display_surface)
-            self.walls.draw(self.display_surface)
-            self.drift_tiles.draw(self.display_surface)
-            self.finish_line.draw(self.display_surface)
-            self.bottom_edge.draw(self.display_surface)
-            # to display finish line when on screen but under bottom edge, 
-            # simply call draw method of finish_line.draw() AFTER buttom_edge.draw()
+                # check for collision
+                self.check_for_collision()
+                # check for drift
+                self.check_for_drift()
 
-            # draw agent
-            self.player.draw(self.display_surface)
+                # draw sprites
+                # draw comets and tiles
+                self.particles.draw(self.display_surface)
+                self.comets.draw(self.display_surface)
+                self.walls.draw(self.display_surface)
+                self.drift_tiles.draw(self.display_surface)
+                self.finish_line.draw(self.display_surface)
+                self.bottom_edge.draw(self.display_surface)
+                # to display finish line when on screen but under bottom edge,
+                # simply call draw method of finish_line.draw() AFTER buttom_edge.draw()
 
-            # draw keys
-            if display_keys:
-                # right key
-                draw_rect_alpha(self.display_surface, (124, 252, 0, self.transparency_right), (160, 60, 90, 90))
-                draw_polygon_alpha(self.display_surface, (255, 255, 255, self.transparency_right),
-                                   [(240, 105), (170, 70), (170, 140)])
-                # left key
-                draw_rect_alpha(self.display_surface, (124, 252, 0, self.transparency_left), (60, 60, 90, 90))
-                draw_polygon_alpha(self.display_surface, (255, 255, 255, self.transparency_left),
-                                   [(70, 105), (140, 70), (140, 140)])
+                # draw agent
+                self.player.draw(self.display_surface)
 
-            self.get_data(scaling)
+                # draw keys
+                if display_keys:
+                    # right key
+                    draw_rect_alpha(self.display_surface, (124, 252, 0, self.transparency_right), (160, 60, 90, 90))
+                    draw_polygon_alpha(self.display_surface, (255, 255, 255, self.transparency_right),
+                                       [(240, 105), (170, 70), (170, 140)])
+                    # left key
+                    draw_rect_alpha(self.display_surface, (124, 252, 0, self.transparency_left), (60, 60, 90, 90))
+                    draw_polygon_alpha(self.display_surface, (255, 255, 255, self.transparency_left),
+                                       [(70, 105), (140, 70), (140, 140)])
+
+                self.get_data(scaling)
+
+            elif not self.prior:
+                # ask for prior belief
+                display_prior_question(self.display_surface)
+                self.get_prior_response()
 
         return self.quit, self.level_done
