@@ -5,3 +5,4 @@ __pycache__
 logs/old
 data/*
 .Rhistory
+.ipynb_checkpoints
