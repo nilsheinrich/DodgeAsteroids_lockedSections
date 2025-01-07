@@ -30,10 +30,10 @@ practice_attempt_dict = dict.fromkeys(practice_arg_combs, 0)  # every trial at 0
 practice_list_of_attempt_dict_keys = list(practice_attempt_dict.keys())
 
 # initialize experimental procedure
-# N_trials = 3  # for each trial there must be a drift_ranges, object_list, and walls_dict file in the logs folder
-# trials = list(range(1, N_trials + 1))  # end +1 due to python stopping before processing last entry
+N_trials = 80  # for each trial there must be a drift_ranges, object_list, and walls_dict file in the logs folder
+trials = list(range(1, N_trials + 1))  # end +1 due to python stopping before processing last entry
 # trials = [1, 2, 3, 4, 5, 6]  # simply stating every level in a list is also possible
-trials = [3]
+# trials = [1]
 
 # drift enabled
 # drift_enabled_args = [True, False]
@@ -79,9 +79,9 @@ while not quit:
                 if instructions:
                     practice_trial = practice_list_of_attempt_dict_keys[0]
                     level_done = run_visualization(surface=screen, scaling=scaling, FPS=FPS,
-                                                   obstacles_lists_file=f'object_list_{practice_trial[0]}.csv',
+                                                   obstacles_list_file=f'object_list_{practice_trial[0]}.csv',
                                                    drift_ranges_file=f'drift_ranges_{practice_trial[0]}.csv',
-                                                   wall_list_file=f'walls_dict_{practice_trial[0]}.csv',
+                                                   wall_list_file=f'walls_dict.csv',
                                                    drift_enabled=practice_trial[1],
                                                    trial=practice_trial[0],
                                                    attempt=practice_attempt_dict[practice_trial]+1,
@@ -95,9 +95,9 @@ while not quit:
                     trial = list_of_attempt_dict_keys[0]
 
                     level_done = run_visualization(surface=screen, scaling=scaling, FPS=FPS,
-                                                   obstacles_lists_file=f'object_list_{trial[0]}.csv',
+                                                   obstacles_list_file=f'object_list_{trial[0]}.csv',
                                                    drift_ranges_file=f'drift_ranges_{trial[0]}.csv',
-                                                   wall_list_file=f'walls_dict_{trial[0]}.csv',
+                                                   wall_list_file=f'walls_dict.csv',
                                                    drift_enabled=trial[1],
                                                    trial=trial[0],
                                                    attempt=attempt_dict[trial]+1,

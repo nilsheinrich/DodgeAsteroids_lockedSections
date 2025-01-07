@@ -4,13 +4,13 @@ import random
 
 
 class Comet(pygame.sprite.Sprite):
-    def __init__(self, pos, size):
+    def __init__(self, x_pos, y_pos, size):
         super().__init__()
         # actual comet image which will be drawn on rectangular surface of comet
         self.image = pygame.image.load(os.path.join('assets/comets', 'comet_master.png')).convert_alpha()
         self.random_angle = random.choice([0, 90, 180, 270])  # items of list are random angles in 90 degree steps
         self.image = pygame.transform.rotate(pygame.transform.scale(self.image, (size, size)), angle=self.random_angle)
-        self.rect = self.image.get_rect(topleft=pos)
+        self.rect = self.image.get_rect(topleft=[x_pos, y_pos])
 
     def update(self, speed, scaling, horizontal_movement):
         # vertical movement

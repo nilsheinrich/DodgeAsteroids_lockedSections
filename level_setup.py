@@ -95,12 +95,12 @@ class Level:
 
         for i in range(1, len(wall_list) + 1):
             # left wall
-            left_wall_x_pos = (wall_list[str(i)][0])
+            left_wall_x_pos = (wall_list[i][0])
             left_wall = Wall((left_wall_x_pos, i * scaling), wall_size, scaling)
             # i*scaling will result in the correct y-coord of the wall
 
             # right wall
-            right_wall_x_pos = (wall_list[str(i)][1])
+            right_wall_x_pos = (wall_list[i][1])
             right_wall = Wall((right_wall_x_pos, i * scaling), wall_size, scaling)
 
             # add both walls to sprite group
@@ -110,8 +110,8 @@ class Level:
         last_wall_tile = self.walls.sprites()[-1]
         self.level_size_y = last_wall_tile.rect.y + wall_size * scaling
 
-        for key in obstacles_list:
-            comet_sprite = Comet((key['x'], key['y']), key['size'])  # arguments in Comet(): x-pos, y-pos, tile_size
+        for key in obstacles_list:  # arguments in Comet(): x-pos, y-pos, tile_size
+            comet_sprite = Comet(obstacles_list[key]['x'], obstacles_list[key]['y'], obstacles_list[key]['size'])
             self.comets.add(comet_sprite)
 
         player_appearance = [player_starting_position[0], (player_starting_position[1] - pre_trial_steps * scaling)]
@@ -120,10 +120,9 @@ class Level:
 
         if drift_enabled:
             for i in range(len(drift_ranges)):
-                drift_info = drift_ranges[i]
                 # drift_info[0]: y_start, [1]: y_end, [2]: direction+magnitude, [3]: visibility
-                drift_tile = DriftTile(drift_info[0], drift_info[1], drift_tile_size_x, observation_space_size_x, edge,
-                                       drift_info[2], drift_info[3], scaling)
+                drift_tile = DriftTile(drift_ranges[i]['y_start'], drift_ranges[i]['y_end'], drift_tile_size_x, observation_space_size_x, edge,
+                                       drift_ranges[i]['direction'], drift_ranges[i]['visibility'], scaling)
                 self.drift_tiles.add(drift_tile)
 
         for _ in range(int(last_wall_tile.rect.y / scaling * 2.5)):
