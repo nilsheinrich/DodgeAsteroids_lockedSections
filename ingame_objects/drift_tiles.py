@@ -1,6 +1,4 @@
 import pygame
-import os
-import random
 
 
 class DriftTile(pygame.sprite.Sprite):
@@ -20,7 +18,7 @@ class DriftTile(pygame.sprite.Sprite):
         else:
             self.image.fill('black')
         # imposed drift by tile
-        self.direction = 1/direction
+        self.direction = direction
         # position of drift sprite
         self.y_pos = y_start
         # x_pos depends on direction (drift to right=tile is visualized to the left and vice versa)
