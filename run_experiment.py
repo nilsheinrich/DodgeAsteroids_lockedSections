@@ -22,7 +22,7 @@ screen = pygame.display.set_mode((screen_width, screen_height))  # ,pygame.FULLS
 
 # initialize practice procedure
 practice_trials = ['training1']
-practice_drift_enabled_args = [False]  # [False, False, False]
+practice_drift_enabled_args = [True]  # [False, False, False]
 practice_args_list = [practice_trials, practice_drift_enabled_args]
 practice_arg_combs = list(itertools.product(*practice_args_list))
 # COMING: HAVE all args combined only with the exact iterable to have more control over subsequent practice trials
@@ -30,10 +30,10 @@ practice_attempt_dict = dict.fromkeys(practice_arg_combs, 0)  # every trial at 0
 practice_list_of_attempt_dict_keys = list(practice_attempt_dict.keys())
 
 # initialize experimental procedure
-N_trials = 80  # for each trial there must be a drift_ranges, object_list, and walls_dict file in the logs folder
-trials = list(range(1, N_trials + 1))  # end +1 due to python stopping before processing last entry
+# N_trials = 80  # for each trial there must be a drift_ranges, object_list, and walls_dict file in the logs folder
+# trials = list(range(1, N_trials + 1))  # end +1 due to python stopping before processing last entry
 # trials = [1, 2, 3, 4, 5, 6]  # simply stating every level in a list is also possible
-# trials = [16]
+trials = [16]
 
 # drift enabled
 # drift_enabled_args = [True, False]
@@ -57,7 +57,7 @@ max_attempts = 3  # maximum number of attempts given to solve trial
 # start experimental procedure
 quit = False
 level_done = False
-instructions = False
+instructions = True
 n_run = 0
 while not quit:
 
@@ -81,7 +81,7 @@ while not quit:
                     level_done = run_visualization(surface=screen, scaling=scaling, FPS=FPS,
                                                    obstacles_list_file=f'object_list_{practice_trial[0]}.csv',
                                                    drift_ranges_file=f'drift_ranges_{practice_trial[0]}.csv',
-                                                   wall_list_file=f'walls_dict.csv',
+                                                   wall_list_file=f'walls_dict_{practice_trial[0]}.csv',
                                                    drift_enabled=practice_trial[1],
                                                    trial=practice_trial[0],
                                                    attempt=practice_attempt_dict[practice_trial]+1,
