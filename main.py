@@ -17,7 +17,7 @@ def run_visualization(surface, scaling=1, FPS=30,
     :param surface: argument for specifying pygame.display object
     :param scaling: int (or float) to scale up on-screen visualization
     :param FPS: frames per second. 30 as default value. For smoother animation choose 60.
-    :param obstacles_lists_file: file for list of obstacles. Has to be in logs repository
+    :param obstacles_list_file: file for list of obstacles. Has to be in logs repository
     :param drift_ranges_file: file for drift ranges. Has to be in logs repository
     :param wall_list_file: file with wall positions on every y position in level
     :param drift_enabled: drift tiles in level vs. no drift tiles

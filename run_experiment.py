@@ -30,10 +30,10 @@ practice_attempt_dict = dict.fromkeys(practice_arg_combs, 0)  # every trial at 0
 practice_list_of_attempt_dict_keys = list(practice_attempt_dict.keys())
 
 # initialize experimental procedure
-# N_trials = 80  # for each trial there must be a drift_ranges, object_list, and walls_dict file in the logs folder
-# trials = list(range(1, N_trials + 1))  # end +1 due to python stopping before processing last entry
+N_trials = 80  # for each trial there must be a drift_ranges, object_list, and walls_dict file in the logs folder
+trials = list(range(1, N_trials + 1))  # end +1 due to python stopping before processing last entry
 # trials = [1, 2, 3, 4, 5, 6]  # simply stating every level in a list is also possible
-trials = [16]
+# trials = [37]
 
 # drift enabled
 # drift_enabled_args = [True, False]
