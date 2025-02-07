@@ -1,4 +1,5 @@
 import random
+import os
 import itertools
 from main import run_visualization
 from displays import *
@@ -19,6 +20,12 @@ pygame.init()
 screen_width = (observation_space_size_x + (2 * edge)) * scaling
 screen_height = observation_space_size_y * scaling
 screen = pygame.display.set_mode((screen_width, screen_height))  # ,pygame.FULLSCREEN vs. pygame.RESIZABLE
+
+x = 0
+y = 0
+os.environ['SDL_VIDEO_WINDOW_POS'] = "%d,%d" % (x, y)
+
+pygame.mouse.set_visible(False)
 
 # initialize practice procedure
 practice_trials = ['training1']
