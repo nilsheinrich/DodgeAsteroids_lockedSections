@@ -1,6 +1,7 @@
 import os
 import ast
 import csv
+import numpy as np
 import pandas as pd
 from config import edge, agent_size_x, agent_size_y
 
@@ -121,3 +122,44 @@ def adjust_drift_sections(drift_dict, scaling):
         drift_dict[i]['y_start'] = (drift_dict[i]['y_start'] - 1) * scaling
         drift_dict[i]['y_end'] = (drift_dict[i]['y_end'] - 1) * scaling
     return drift_dict
+
+
+# Functions for converting distances in pixel on screen to visual degrees and back
+def pixel_to_degree(
+    distance_on_screen_pixel, mm_per_pixel=595 / 1920, distance_to_screen_mm=700
+):
+    """
+    calculate the visual degrees of a distance (saccade amplitude, on screen distance between objects)
+    setup:
+     - screen_width_in_mm=595
+     - screen_height_in_mm=335
+     - pixels_screen_width=1920
+     - pixels_screen_height=1080
+     - distance_to_screen_in_mm=700
+    """
+    distance_on_screen_mm = float(distance_on_screen_pixel) * mm_per_pixel
+
+    visual_angle_in_radians = np.arctan(distance_on_screen_mm / distance_to_screen_mm)
+
+    return np.rad2deg(visual_angle_in_radians)
+
+
+def degree_to_pixel(target_size=1, mm_per_pixel=595 / 1920, distance_to_screen_mm=700):
+    """
+    target_size in visual degrees
+
+    calculate the amount of pixel on screen to cover target size in visual degrees (stimulus size)
+    setup:
+     - screen_width_in_mm=595
+     - screen_height_in_mm=335
+     - pixels_screen_width=1920
+     - pixels_screen_height=1080
+     - distance_to_screen_in_mm=700
+    """
+    target_size_in_radians = np.deg2rad(target_size)
+
+    distance_on_screen_pixel = (
+        np.tan(target_size_in_radians) * distance_to_screen_mm / mm_per_pixel
+    )
+
+    return distance_on_screen_pixel

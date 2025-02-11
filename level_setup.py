@@ -9,9 +9,18 @@ from ingame_objects.drift_tiles import DriftTile
 from ingame_objects.particles import Particle
 from ingame_objects.lines import Line
 from displays import display_soc_question, display_prior_question
+from helper_functions import degree_to_pixel
+from draw_transparent_shapes import draw_rect_alpha, draw_polygon_alpha, draw_circle_alpha
 from config import *
+# agent
+from action_planner.action_planner import ActionPlanner
+from action_planner.CCL_action_selection import select_action_goal, sample_gaze_location, select_drift_path
+from action_planner.helper_functions import load_parameters_dict
 
-from draw_transparent_shapes import draw_rect_alpha, draw_polygon_alpha
+# bad practice but here we go
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
+
 
 display_keys = False
 question_soc = True
@@ -49,6 +58,7 @@ class Level:
 
         # listing visible obstacles in every instance, as well as adjacent wall tiles and last wall tile positions
         self.visible_obstacles = []
+        self.visible_drift_tiles = []
         self.adjacent_wall_tiles_x_pos = []
         self.last_wall_pos = []
 
@@ -72,13 +82,24 @@ class Level:
         if 'training' in str(self.trial):  # TRY CONTAIN
             self.replay_threshold = 1000  # arbitrarily high threshold that is never reached
 
+        # Initiate agent from class ActionPlanner for simulating dynamic decision-making
+        parameters = load_parameters_dict("action_planner/Data/parameters.txt")
+        self.agent = ActionPlanner(free_parameters=parameters,
+                                   initial_position_x=self.player.sprite.rect.x + scaling,
+                                   observation_space_in_pixel=[observation_space_size_x*scaling, observation_space_size_y*scaling])
+        self.convolutionGranularity = int(self.agent.parameters['convolutionGranularity'])
+
+        self.action_goal_selected = False
+
         # pandas Dataframe in which data of each frame will be stored
         self.columns = ['trial', 'attempt', 'time_played', 'level_size_y', 'player_pos', 'collision', 'current_input',
                         'drift_enabled', 'current_drift', 'level_done',
                         'visible_obstacles', 'last_walls_tile', 'adjacent_wall_tiles_x_pos', 'visible_drift_tiles',
-                        'prior', 'SoC']
+                        'prior', 'SoC',
+                        'action_goal_selected', 'action_goal_x', 'action_goal_y']
 
         self.data = pd.DataFrame(columns=self.columns)
+
         # convert to boolean where necessary
         self.data["collision"] = self.data["collision"].astype(bool)
         self.data["drift_enabled"] = self.data["drift_enabled"].astype(bool)
@@ -146,32 +167,99 @@ class Level:
         self.transparency_left = 90
         self.transparency_right = 90
 
-        keys = pygame.key.get_pressed()
-
-        if keys[pygame.K_m] and keys[pygame.K_y]:  # pressing both keys
-            self.transparency_right = 150
-            self.transparency_left = 150
-            self.current_input = None  # maybe we have to flag pressing both keys here
-            self.direction.x = 0
-        elif keys[pygame.K_m]:  # K_m vs. K_RIGHT
-            self.current_input = 'Right'
+        if self.agent.action == 'Right':
             self.direction.x = -1
             self.transparency_right = 150
-        elif keys[pygame.K_y]:  # K_y vs. K_LEFT
-            self.current_input = 'Left'
+        elif self.agent.action == 'Left':
             self.direction.x = 1
             self.transparency_left = 150
-        else:
-            self.current_input = None
+        else:  # self.agent.action is None
             self.direction.x = 0
 
     def update(self):
-        # if there is drift, then no input
-        if self.drift.x == 0:
-            self.get_input()
-        else:
-            self.direction.x = 0
+        # create observation space of agent from subsection of display between boarders
+        player = self.player.sprite
 
+        # get reference point
+        reference_point = (self.walls.sprites()[-2].rect.x + scaling, 236)
+        # 236 being player.sprite.rect.bottom after approach at the start of level
+        # 208 is player.sprite.rect.top; player included in goal-driven visual environment subsection
+
+        if len(self.visible_drift_tiles) > 0:
+            for drift_tile in self.visible_drift_tiles:
+                if (drift_tile[1] > player.rect.bottom) & \
+                        (drift_tile[1]+(15*scaling) < (observation_space_size_y-bottom_edge)*scaling):
+                    # the first drift tile that is below agent
+                    if drift_tile[0] < player.rect.x:
+                        self.agent.drift_direction = 1
+                    else:
+                        self.agent.drift_direction = -1
+                    drift_situation = reference_point[0], drift_tile[1], 532, 15*scaling  # 15=y size of drift
+                    drift_situation_surface = self.display_surface.subsurface(drift_situation)
+                    drift_surface_array = np.transpose(pygame.surfarray.array_green(drift_situation_surface))
+                    drift_surface_array[drift_surface_array > 1] = 1
+
+                    select_drift_path(PAR=self.agent.parameters,
+                                      observation_in_pixel=drift_surface_array,
+                                      min_percentage_for_rejection=self.agent.min_percentage_for_rejection)
+
+                    break  # only first drift situation is planned
+
+        #
+        observation_space = reference_point[0], reference_point[1], 532, 394
+        surface_subsection = self.display_surface.subsurface(observation_space)
+        surface_array = np.transpose(pygame.surfarray.array_green(surface_subsection))
+        surface_array[surface_array > 1] = 1
+
+        # gaze location
+        if self.agent.action_goal:
+            self.agent.gaze_location = sample_gaze_location(
+                HL_SoC=self.agent.HL_SoC,
+                observation_in_pixel=surface_array,
+                action_goal_x=self.agent.action_goal[0],
+                action_goal_y=self.agent.action_goal[1],
+                reference=reference_point)
+        else:
+            self.agent.gaze_location = sample_gaze_location(
+                HL_SoC=self.agent.HL_SoC,
+                observation_in_pixel=surface_array,
+                action_goal_x=266,
+                action_goal_y=50,
+                reference=reference_point)
+
+        # update agents predictions if horizontal movement present (due to action or drift)
+        if self.horizontal_movement != 0:
+            self.agent.perceived_step_size = abs(self.horizontal_movement)
+            self.agent.prediction_error()
+
+        # generate action_goal if none is applied OR assess action goal (vertically and horizontally) if one is applied
+        self.action_goal_selected = False
+        if self.agent.action_goal is None:
+            self.agent.action_goal, self.agent.action_goal_col, _, self.agent.HL_SoC = \
+                select_action_goal(PAR=self.agent.parameters,
+                                   HL_SoC=self.agent.HL_SoC,
+                                   observation_in_pixel=surface_array,
+                                   reference=reference_point,
+                                   agent_pos_x=self.agent.agent_pos_x,
+                                   min_percentage_for_rejection=self.agent.min_percentage_for_rejection)
+            self.action_goal_selected = True
+        else:
+            # monitoring application of selected action goal
+            self.agent.assess_action_goal(observation_in_pixel=surface_array, reference=reference_point, radius=scaling)
+            if self.agent.action_goal is None:
+                self.agent.action_goal, self.agent.action_goal_col, _, self.agent.HL_SoC = \
+                    select_action_goal(PAR=self.agent.parameters,
+                                       HL_SoC=self.agent.HL_SoC,
+                                       observation_in_pixel=surface_array,
+                                       reference=reference_point,
+                                       agent_pos_x=self.agent.agent_pos_x,
+                                       min_percentage_for_rejection=self.agent.min_percentage_for_rejection)
+                self.action_goal_selected = True
+
+        # get input from agent
+        self.get_input()
+
+        # apply horizontal movement of agent in environment (environment moves around agent)
         self.horizontal_movement = self.direction.x + self.drift.x  # compute horizontal movement with drift
 
     def check_for_collision(self):
@@ -186,18 +274,6 @@ class Level:
             self.frames_with_collision += 1
         else:
             self.frames_with_collision = 0
-
-        # checking for individual collisions:
-        # # with obstacles
-        # for sprite in self.comets.sprites():
-        #     if sprite.rect.colliderect(player.rect):  # check for player-comet collision
-        #         self.frames_with_collision += 1
-        #
-        # # with walls
-        # for sprite in self.walls.sprites():
-        #     if sprite.rect.colliderect(player.rect):  # check for player-wall collision
-        #         self.currently_colliding = True
-        #         self.frames_with_collision += 1
 
         # check for collision threshold of consecutive frames with collision
         if self.frames_with_collision > self.frames_collision_threshold:
@@ -214,39 +290,11 @@ class Level:
                 self.drift.x = -sprite.direction
 
     def get_soc_response(self):
-        keys = pygame.key.get_pressed()
-        if keys[pygame.K_1]:
-            self.SoC = 1
-        if keys[pygame.K_2]:
-            self.SoC = 2
-        if keys[pygame.K_3]:
-            self.SoC = 3
-        if keys[pygame.K_4]:
-            self.SoC = 4
-        if keys[pygame.K_5]:
-            self.SoC = 5
-        if keys[pygame.K_6]:
-            self.SoC = 6
-        if keys[pygame.K_7]:
-            self.SoC = 7
+        self.SoC = self.agent.HL_SoC
         return self.SoC
 
     def get_prior_response(self):
-        keys = pygame.key.get_pressed()
-        if keys[pygame.K_1]:
-            self.prior = 1
-        if keys[pygame.K_2]:
-            self.prior = 2
-        if keys[pygame.K_3]:
-            self.prior = 3
-        if keys[pygame.K_4]:
-            self.prior = 4
-        if keys[pygame.K_5]:
-            self.prior = 5
-        if keys[pygame.K_6]:
-            self.prior = 6
-        if keys[pygame.K_7]:
-            self.prior = 7
+        self.prior = self.agent.HL_SoC
 
     def get_data(self, scaling):
 
@@ -295,11 +343,12 @@ class Level:
         frame_data.at[0, 'visible_obstacles'] = self.visible_obstacles
 
         # drift
-        visible_drift_tiles = []
-        for sprite in self.drift_tiles.sprites():
-            if 0 <= sprite.rect.y <= (observation_space_size_y - bottom_edge) * scaling:
-                visible_drift_tiles.append([sprite.rect.x, sprite.rect.y])
-        frame_data.at[0, 'visible_drift_tiles'] = visible_drift_tiles
+        frame_data.at[0, 'visible_drift_tiles'] = self.visible_drift_tiles
+
+        # action goal
+        frame_data.action_goal_selected = self.action_goal_selected
+        frame_data.action_goal_x = self.agent.action_goal[0]
+        frame_data.action_goal_y = self.agent.action_goal[1]
 
         # append everything to pandas DataFrame
         self.data = pd.concat([self.data, frame_data], ignore_index=True)
@@ -316,6 +365,12 @@ class Level:
         for sprite in self.comets.sprites():
             if 0 <= sprite.rect.y <= (observation_space_size_y - bottom_edge) * scaling:
                 self.visible_obstacles.append([sprite.rect.x, sprite.rect.y])
+
+        # updating visible drift tiles
+        self.visible_drift_tiles = []
+        for sprite in self.drift_tiles.sprites():
+            if 0 <= sprite.rect.y <= (observation_space_size_y - bottom_edge) * scaling:
+                self.visible_drift_tiles.append([sprite.rect.x, sprite.rect.y])
 
         # updating adjacent wall tiles y pos (left wall, right wall)
         self.adjacent_wall_tiles_x_pos = [self.walls.sprites()[0].rect.x, self.walls.sprites()[1].rect.x]
@@ -368,8 +423,6 @@ class Level:
             if self.prior:
                 player.animate(self.current_input)
 
-                self.update()
-
                 if player.rect.y < player_position[1]:
                     player.approach(velocity, scaling)
                     pass
@@ -381,6 +434,9 @@ class Level:
                     self.drift_tiles.update(velocity, scaling, self.horizontal_movement)
                     self.particles.update(velocity, scaling, self.horizontal_movement)
                     self.finish_line.update(velocity, scaling, self.horizontal_movement)
+
+                    # update action goal
+                    self.agent.update_action_goal(velocity, scaling, self.horizontal_movement)
 
                 # check for collision
                 self.check_for_collision()
@@ -398,8 +454,26 @@ class Level:
                 # to display finish line when on screen but under bottom edge,
                 # simply call draw method of finish_line.draw() AFTER buttom_edge.draw()
 
+                # calling update here, because otherwise agent would get empty input in first frame...
+                self.update()
+
                 # draw agent
                 self.player.draw(self.display_surface)
+
+                # draw transparent circle around action goal
+                draw_circle_alpha(surface=self.display_surface, color=(255, 0, 0, 100), center=self.agent.gaze_location,
+                                  radius=degree_to_pixel(1))
+                # draw fixated action goal
+                pygame.draw.circle(self.display_surface, (255, 0, 0), self.agent.gaze_location, 2)
+                # draw SoC indicators
+                # low-level
+                pygame.draw.rect(self.display_surface, (50, 168, 82),
+                                 (player.rect.x + 2 * scaling, player.rect.y - self.agent.LL_SoC * 2 * scaling, scaling,
+                                  self.agent.LL_SoC * 2 * scaling))
+                # high-level
+                pygame.draw.rect(self.display_surface, (232, 137, 12),
+                                 (player.rect.x + 3.1 * scaling, player.rect.y - self.agent.HL_SoC * 2 * scaling,
+                                  scaling, self.agent.HL_SoC * 2 * scaling))
 
                 # draw keys
                 if display_keys:
