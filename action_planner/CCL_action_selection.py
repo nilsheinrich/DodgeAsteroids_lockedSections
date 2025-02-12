@@ -337,7 +337,7 @@ def sample_gaze_location(HL_SoC: float, observation_in_pixel, action_goal_x, act
     return [final_gaze_x, final_gaze_y]
 
 
-def select_drift_path(PAR: dict, observation_in_pixel,
+def select_drift_path(PAR: dict, observation_in_pixel, reference,
                       drift_prior, drift_direction,
                       min_percentage_for_rejection: float, debug=True):
     """
@@ -347,9 +347,13 @@ def select_drift_path(PAR: dict, observation_in_pixel,
     dx = drift_prior*drift_direction
     dy = 210
     slope = dx/np.shape(observation_in_pixel)[1]  # dx / dy  # expected trajectory
+    #slope = dx / dy  # expected trajectory
 
     kernel_size_x, kernel_size_y, action_field, number_horizontal_strides, number_vertical_strides, time, rejected_action_possibilities, rejects, pooled_observation = convolve_observation(PAR, observation_in_pixel, min_percentage_for_rejection)
     # print(f"slope: {slope}; N_vertical_strides:{np.shape(pooled_observation)[0]}")
+
+    # just for a quick switch between pixel map and pooled observation
+    #pooled_observation = observation_in_pixel
 
     # all positions within grid that are =1
     ones_positions = np.argwhere(pooled_observation == 1)
@@ -388,6 +392,9 @@ def select_drift_path(PAR: dict, observation_in_pixel,
                 best_x = x
 
     print(f"Best starting x: {best_x}, Maximum worst-case distance: {max_min_dist}")
+
+    # convert to pixel coords
+    action_goal_x_coord = best_x + kernel_size_x/2 + reference[0]
 
     ############################################
     if debug:
@@ -439,4 +446,4 @@ def select_drift_path(PAR: dict, observation_in_pixel,
         plt.close('all')
     ############################################
 
-    return None
+    return action_goal_x_coord

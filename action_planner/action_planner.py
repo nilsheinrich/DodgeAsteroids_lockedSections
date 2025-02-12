@@ -135,6 +135,7 @@ class ActionPlanner:
         # front of action planner agent
         if (self.agent_pos_x - radius <= self.action_goal[0] <= self.agent_pos_x + radius) & (
                 self.action_goal[1] <= 236 + 100):
+            print("action goal implemented")
             # 236 being player.sprite.rect.bottom after approach at the start of level
             self.action_goal_reached = True
             self.action_goal = None
