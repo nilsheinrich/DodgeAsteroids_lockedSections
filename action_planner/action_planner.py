@@ -37,9 +37,10 @@ class ActionPlanner:
         self.step_size_prior = uniform_dist / uniform_dist.sum()  # normalized prior
 
         # priors for imposed movement by drift (separate from step size) - over whole drift section
-        self.drift_prior = likelihood_function(space=self.observation_space_x_in_pixel,
-                                               mu=230,  # true value
-                                               sigma=50)  # well informed prior
+        #self.drift_prior = likelihood_function(space=self.observation_space_x_in_pixel,
+        #                                       mu=230,  # true value
+        #                                       sigma=50)  # well informed prior
+        self.drift_prior = 230
         self.drift_applying = False  # True vs. False: inferred state (from visual feedback) of drift applying or not
         # drift can be on screen but not applying. This variable only refers to the model inferring whether drift
         # applies not whether it is visible.

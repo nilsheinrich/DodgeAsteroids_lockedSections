@@ -4,6 +4,7 @@ import math
 import random
 import scipy.stats as st
 import skimage.measure
+from scipy.spatial import distance
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import seaborn as sns
@@ -17,9 +18,6 @@ def pool_observation(PAR: dict, observation_in_pixel, resample=False):
     Observation in pixel is pooled into an number of kernels with the number of kernels/pools given by
     the free parameter convolutionGranularity. The higher the value, the more granular is the
     representation of the visual environment. Kernels are subsequently convolved for mean pixel activation.
-
-    In the future: make number of kernels/pools depend on HL_SoC. The higher the HL_SoC the higher the
-    convolutionGranularity .i.e the smaller the kernel size?
     """
     # df = pd.DataFrame(data=observation_in_pixel[0:, 0:],
     #                  index=[i for i in range(observation_in_pixel.shape[0])],
@@ -48,9 +46,9 @@ def pool_observation(PAR: dict, observation_in_pixel, resample=False):
     # number_vertical_strides = convolutionGranularity / number_horizontal_strides
 
     kernel_size_y = math.ceil(np.shape(observation_in_pixel)[0] / number_vertical_strides)
+
     pooled_observation = skimage.measure.block_reduce(observation_in_pixel, (kernel_size_y, kernel_size_x), np.mean)
-    # print(f"pooled_observation: {pooled_observation}, "
-    #      f"dimensions={len(pooled_observation[0])}*{len(pooled_observation)}")
+    # print(f"pooled_observation: {pooled_observation}, dimensions={len(pooled_observation[0])}*{len(pooled_observation)}")
     return kernel_size_x, kernel_size_y, pooled_observation, number_horizontal_strides, number_vertical_strides
 
 
@@ -83,7 +81,11 @@ def convolve_observation(PAR: dict, observation_in_pixel, min_percentage_for_rej
     # assess time taken for conscious broadcast
     broadcast_time = np.random.uniform(200, 280, 1)
     # print(f"action field: {action_field}; rejected action possibilities: {rejected_action_possibilities}")
-    return kernel_size_x, kernel_size_y, action_field, number_horizontal_strides, number_vertical_strides, broadcast_time, rejected_action_possibilities, rejects
+
+    # also passing pooled observation
+    pooled_observation = (pooled_observation > min_percentage_for_rejection).astype(int)
+
+    return kernel_size_x, kernel_size_y, action_field, number_horizontal_strides, number_vertical_strides, broadcast_time, rejected_action_possibilities, rejects, pooled_observation
 
 
 def select_action_goal(PAR: dict, HL_SoC: float, observation_in_pixel, reference: tuple,
@@ -98,7 +100,7 @@ def select_action_goal(PAR: dict, HL_SoC: float, observation_in_pixel, reference
     Of those remaining the one that is closest on the horizontal axis to the agent_pos_x is chosen.
     """
 
-    kernel_size_x, kernel_size_y, action_field, number_horizontal_strides, number_vertical_strides, time, rejected_action_possibilities, rejects = convolve_observation(PAR, observation_in_pixel, min_percentage_for_rejection)
+    kernel_size_x, kernel_size_y, action_field, number_horizontal_strides, number_vertical_strides, time, rejected_action_possibilities, rejects, _ = convolve_observation(PAR, observation_in_pixel, min_percentage_for_rejection)
 
     # the higher the HL_SoC, the higher the row number
     loc = int(HL_SoC*number_vertical_strides - len(rejected_action_possibilities)*0.001)
@@ -114,7 +116,7 @@ def select_action_goal(PAR: dict, HL_SoC: float, observation_in_pixel, reference
 
     # resample action field with highest granularity when there are no action_possibilities in desired loc
     if len(action_possibilities) < 1:
-        kernel_size_x, kernel_size_y, action_field, number_horizontal_strides, number_vertical_strides, time, rejected_action_possibilities, rejects = convolve_observation(PAR, observation_in_pixel, min_percentage_for_rejection, resample=True)
+        kernel_size_x, kernel_size_y, action_field, number_horizontal_strides, number_vertical_strides, time, rejected_action_possibilities, rejects, _ = convolve_observation(PAR, observation_in_pixel, min_percentage_for_rejection, resample=True)
 
         action_possibilities = [action_possibility for action_possibility in action_field if
                                 action_possibility[0] == decision_space_y]
@@ -335,18 +337,57 @@ def sample_gaze_location(HL_SoC: float, observation_in_pixel, action_goal_x, act
     return [final_gaze_x, final_gaze_y]
 
 
-def select_drift_path(PAR: dict, observation_in_pixel, min_percentage_for_rejection: float, debug=True):
+def select_drift_path(PAR: dict, observation_in_pixel,
+                      drift_prior, drift_direction,
+                      min_percentage_for_rejection: float, debug=True):
     """
-    Possible action goals are received from generate_action_field. Possible action goals with mean activation set to 1
-    are rejected and only those that are below 1 are considered. Then only those in row N are given to action goal
-    selection process.
-
-    N row from which possible action goals are considered is dependent on HL_SoC: loc variable.
-
-    Of those remaining the one that is closest on the horizontal axis to the agent_pos_x is chosen.
+    ...
     """
 
-    kernel_size_x, kernel_size_y, action_field, number_horizontal_strides, number_vertical_strides, time, rejected_action_possibilities, rejects = convolve_observation(PAR, observation_in_pixel, min_percentage_for_rejection)
+    dx = drift_prior*drift_direction
+    dy = 210
+    slope = dx/np.shape(observation_in_pixel)[1]  # dx / dy  # expected trajectory
+
+    kernel_size_x, kernel_size_y, action_field, number_horizontal_strides, number_vertical_strides, time, rejected_action_possibilities, rejects, pooled_observation = convolve_observation(PAR, observation_in_pixel, min_percentage_for_rejection)
+    # print(f"slope: {slope}; N_vertical_strides:{np.shape(pooled_observation)[0]}")
+
+    # all positions within grid that are =1
+    ones_positions = np.argwhere(pooled_observation == 1)
+
+    # possible starting positions (accounting for end point remains within grid)
+    if dx < 0:
+        min_x_start = np.abs(slope*np.shape(pooled_observation)[0])
+        candidate_xs = np.arange(min_x_start, pooled_observation.shape[1])
+    elif dx > 0:
+        max_x_start = pooled_observation.shape[1] - np.abs(slope*np.shape(pooled_observation)[0])
+        candidate_xs = np.arange(0, max_x_start + 1)
+
+    # store best x with corresponding distance score
+    best_x = None
+    max_min_dist = 0
+
+    # check every x-position as a candidate for the vector
+    for x in candidate_xs:
+        # get all points along the vertical vector at x
+        vector_points = np.array(
+            [[x + round(y * slope), y] for y in range(dy) if 0 <= x + round(y * slope) < pooled_observation.shape[1]])
+
+        if ones_positions.size > 0:
+            # compute distances from all points on the vector to all 1s
+            dists = distance.cdist(vector_points, ones_positions, metric='euclidean')
+
+            # find the closest 1 for each point on the vector
+            min_dists_per_point = np.min(dists, axis=1)
+
+            # find the worst-case (minimum) distance along the vector
+            min_dist_along_vector = np.min(min_dists_per_point)
+
+            # update if this x is better
+            if min_dist_along_vector > max_min_dist:
+                max_min_dist = min_dist_along_vector
+                best_x = x
+
+    print(f"Best starting x: {best_x}, Maximum worst-case distance: {max_min_dist}")
 
     ############################################
     if debug:

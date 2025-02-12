@@ -201,6 +201,8 @@ class Level:
 
                     select_drift_path(PAR=self.agent.parameters,
                                       observation_in_pixel=drift_surface_array,
+                                      drift_prior=self.agent.drift_prior,
+                                      drift_direction=self.agent.drift_direction,
                                       min_percentage_for_rejection=self.agent.min_percentage_for_rejection)
 
                     break  # only first drift situation is planned
@@ -313,28 +315,6 @@ class Level:
         frame_data.attempt = self.attempt
         frame_data.level_size_y = self.level_size_y
 
-        """
-        Walls
-        There has to be a better alternative instead of simply inserting all wall tiles into a list.
-        Rather have one wall tile given and then distance to other wall? Or just distance from agent to wall left
-        and right? - brainstorming
-
-        wall narrowing start and wall narrowing complete + wall distant again?
-        These would be the only interesting y coordinates
-
-        # walls_narrow_start = ?  # walls start getting narrow (first step) y coord
-        # walls_narrow_complete = ?  # walls reached narrowest point y coord
-        # walls_wide_again = ?  # based on current_wall_distance='narrow', when walls get wide again
-        # current_wall_distance = ['wide']  # on y coord of agent
-
-        stupidly inserting all visible wall tiles in a list into frame_data
-        # visible_walls = []
-        # for sprite in self.walls.sprites():
-        #     # checking for visibility by checking for y of sprite being between 0 and size of observation window
-        #     if 0 <= sprite.rect.y <= observation_space_size_y * scaling:
-        #         visible_walls.append([sprite.rect.x, sprite.rect.y])
-        # frame_data.at[0, 'visible_walls'] = visible_walls
-        """
         # inserting only last wall tile (bottom right of level) for later reconstruction of complete walls
         last_wall_tile = self.walls.sprites()[-1]
         frame_data.at[0, 'last_walls_tile'] = [last_wall_tile.rect.x, last_wall_tile.rect.y]
