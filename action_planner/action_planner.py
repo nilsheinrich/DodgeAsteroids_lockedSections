@@ -41,9 +41,6 @@ class ActionPlanner:
         #                                       mu=230,  # true value
         #                                       sigma=50)  # well informed prior
         self.drift_prior = 230
-        self.drift_applying = False  # True vs. False: inferred state (from visual feedback) of drift applying or not
-        # drift can be on screen but not applying. This variable only refers to the model inferring whether drift
-        # applies not whether it is visible.
         self.drift_direction = None
 
         # horizontal movement either by own action or by drift
@@ -79,6 +76,8 @@ class ActionPlanner:
 
         self.action_goal = None
         self.action_goal_col = None
+        self.drift_situation_action_goal = False
+
         # when is action goal reached (not necessarily if point is met)
         self.target_radius = 5  # radius around action goals that is deemed as sufficiently for action_goal_reached
         # is action goal successfully reached
@@ -131,11 +130,13 @@ class ActionPlanner:
         # update instance complexity
         self.instance_complexity = new_complexity
 
+        if self.action_goal[1] <= 236:  # if action goal went pass agent, then it's outdated
+            self.action_goal_reached = True  # actually no but stays like this for now
+            self.action_goal = None
         # for self.action_goal[1], the vertical range, it is sufficient for the action goal to enter specific region in
         # front of action planner agent
-        if (self.agent_pos_x - radius <= self.action_goal[0] <= self.agent_pos_x + radius) & (
+        elif (self.agent_pos_x - radius <= self.action_goal[0] <= self.agent_pos_x + radius) & (
                 self.action_goal[1] <= 236 + 100):
-            print("action goal implemented")
             # 236 being player.sprite.rect.bottom after approach at the start of level
             self.action_goal_reached = True
             self.action_goal = None
@@ -160,6 +161,7 @@ class ActionPlanner:
             self.action = 'Right'
         else:
             self.action = None
+        print(f"Agent wants to take action: {self.action}")
 
     def prediction_error(self):
         """

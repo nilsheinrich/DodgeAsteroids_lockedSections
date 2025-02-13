@@ -346,11 +346,10 @@ def select_drift_path(PAR: dict, observation_in_pixel, reference,
 
     dx = drift_prior*drift_direction
     dy = 210
-    slope = dx/np.shape(observation_in_pixel)[1]  # dx / dy  # expected trajectory
-    #slope = dx / dy  # expected trajectory
+    #slope = 0.45  # dx/np.shape(observation_in_pixel)[1]  # dx / dy  # expected trajectory
+    slope = dx / dy  # expected trajectory
 
     kernel_size_x, kernel_size_y, action_field, number_horizontal_strides, number_vertical_strides, time, rejected_action_possibilities, rejects, pooled_observation = convolve_observation(PAR, observation_in_pixel, min_percentage_for_rejection)
-    # print(f"slope: {slope}; N_vertical_strides:{np.shape(pooled_observation)[0]}")
 
     # just for a quick switch between pixel map and pooled observation
     #pooled_observation = observation_in_pixel
@@ -358,17 +357,20 @@ def select_drift_path(PAR: dict, observation_in_pixel, reference,
     # all positions within grid that are =1
     ones_positions = np.argwhere(pooled_observation == 1)
 
+    #print(f"slope:{slope}; kernel:{kernel_size_y}, {kernel_size_x}, dimensions:{np.shape(pooled_observation)}")
+
     # possible starting positions (accounting for end point remains within grid)
-    if dx < 0:
-        min_x_start = np.abs(slope*np.shape(pooled_observation)[0])
-        candidate_xs = np.arange(min_x_start, pooled_observation.shape[1])
-    elif dx > 0:
-        max_x_start = pooled_observation.shape[1] - np.abs(slope*np.shape(pooled_observation)[0])
-        candidate_xs = np.arange(0, max_x_start + 1)
+    if dx > 0:  # Positive slope
+        min_x_start, max_x_start = 0, pooled_observation.shape[1] - slope
+    else:  # Negative slope
+        min_x_start, max_x_start = abs(slope), pooled_observation.shape[1] - 1
+
+    # identifying potential starting positions
+    candidate_xs = np.arange(min_x_start, max_x_start + 1)
 
     # store best x with corresponding distance score
     best_x = None
-    max_min_dist = 0
+    max_total_dist = 0
 
     # check every x-position as a candidate for the vector
     for x in candidate_xs:
@@ -376,7 +378,7 @@ def select_drift_path(PAR: dict, observation_in_pixel, reference,
         vector_points = np.array(
             [[x + round(y * slope), y] for y in range(dy) if 0 <= x + round(y * slope) < pooled_observation.shape[1]])
 
-        if ones_positions.size > 0:
+        if ones_positions.size > 0 and len(vector_points) > 0:
             # compute distances from all points on the vector to all 1s
             dists = distance.cdist(vector_points, ones_positions, metric='euclidean')
 
@@ -384,17 +386,16 @@ def select_drift_path(PAR: dict, observation_in_pixel, reference,
             min_dists_per_point = np.min(dists, axis=1)
 
             # find the worst-case (minimum) distance along the vector
-            min_dist_along_vector = np.min(min_dists_per_point)
+            total_dist_along_vector = np.sum(min_dists_per_point)
 
             # update if this x is better
-            if min_dist_along_vector > max_min_dist:
-                max_min_dist = min_dist_along_vector
+            if total_dist_along_vector > max_total_dist:
+                max_total_dist = total_dist_along_vector
                 best_x = x
-
-    print(f"Best starting x: {best_x}, Maximum worst-case distance: {max_min_dist}")
 
     # convert to pixel coords
     action_goal_x_coord = best_x + kernel_size_x/2 + reference[0]
+    print(f"Best starting x-pixel: {action_goal_x_coord}")
 
     ############################################
     if debug:
@@ -433,6 +434,13 @@ def select_drift_path(PAR: dict, observation_in_pixel, reference,
                 rect = patches.Rectangle((x_coord, y_coord), kernel_size_x, kernel_size_y, linewidth=1, edgecolor='r',
                                          facecolor='r', alpha=0.4)
                 ax.ax_joint.add_patch(rect)
+
+        # draw expected trajectory
+        #ax.ax_joint.plot([action_goal_x_coord, 0], [action_goal_x_coord+slope*dy, number_vertical_strides*kernel_size_y], marker='o', c="green")
+        #ax.ax_joint.axvline(action_goal_x_coord, c="green")
+        print(f"expected end x-pixel: {action_goal_x_coord+slope*dy}")
+        ax.ax_joint.axvline(action_goal_x_coord+slope*dy, c="green")
+        #ax.ax_joint.plot([0, 0], [534, 200], marker='o', c="green")
 
         ax.ax_joint.get_xaxis().set_visible(False)
         ax.ax_joint.get_yaxis().set_visible(False)
