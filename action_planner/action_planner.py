@@ -161,7 +161,7 @@ class ActionPlanner:
             self.action = 'Right'
         else:
             self.action = None
-        print(f"Agent wants to take action: {self.action}")
+        #print(f"Agent wants to take action: {self.action}")
 
     def prediction_error(self):
         """

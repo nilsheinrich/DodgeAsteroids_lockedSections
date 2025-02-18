@@ -367,6 +367,7 @@ def select_drift_path(PAR: dict, observation_in_pixel, reference,
 
     # identifying potential starting positions
     candidate_xs = np.arange(min_x_start, max_x_start + 1)
+    #print(f"candidates: {candidate_xs}")
 
     # store best x with corresponding distance score
     best_x = None
@@ -395,7 +396,7 @@ def select_drift_path(PAR: dict, observation_in_pixel, reference,
 
     # convert to pixel coords
     action_goal_x_coord = best_x + kernel_size_x/2 + reference[0]
-    print(f"Best starting x-pixel: {action_goal_x_coord}")
+    #print(f"Best starting x-pixel: {action_goal_x_coord}")
 
     ############################################
     if debug:
@@ -438,7 +439,8 @@ def select_drift_path(PAR: dict, observation_in_pixel, reference,
         # draw expected trajectory
         #ax.ax_joint.plot([action_goal_x_coord, 0], [action_goal_x_coord+slope*dy, number_vertical_strides*kernel_size_y], marker='o', c="green")
         #ax.ax_joint.axvline(action_goal_x_coord, c="green")
-        print(f"expected end x-pixel: {action_goal_x_coord+slope*dy}")
+        print(f"slope: {slope}; best starting x-pixel: {action_goal_x_coord}; expected end x-pixel: {action_goal_x_coord+slope*dy}")
+        ax.ax_joint.axvline(action_goal_x_coord, c="blue")
         ax.ax_joint.axvline(action_goal_x_coord+slope*dy, c="green")
         #ax.ax_joint.plot([0, 0], [534, 200], marker='o', c="green")
 

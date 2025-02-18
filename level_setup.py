@@ -105,7 +105,7 @@ class Level:
         self.data["drift_enabled"] = self.data["drift_enabled"].astype(bool)
         self.data["level_done"] = self.data["level_done"].astype(bool)
 
-        self.reference_point = []
+        self.reference_point = [0, 0]
 
     def setup_level(self, wall_list, obstacles_list, player_starting_position, drift_ranges, drift_enabled, scaling):
         self.walls = pygame.sprite.Group()
@@ -281,6 +281,7 @@ class Level:
                                                                     drift_direction=self.agent.drift_direction,
                                                                     min_percentage_for_rejection=self.agent.min_percentage_for_rejection),
                                                   drift_tile[1]]
+                        self.reference_point = self.agent.action_goal
                         self.action_goal_selected = True
                         self.agent.drift_situation_action_goal = True
                         break
@@ -300,7 +301,7 @@ class Level:
 
         # get input from agent, but only when there is no drift
         #if self.drift.x == 0:
-            print(f" action goal: {self.agent.action_goal[0]}; spaceship horizontal position: {player.rect.x}")
+            #print(f" action goal: {self.agent.action_goal[0]}; spaceship horizontal position: {player.rect.x}")
             self.get_input()
         else:
             self.direction.x = 0
@@ -489,8 +490,8 @@ class Level:
                 #                  radius=degree_to_pixel(1))
                 # draw fixated action goal
                 #pygame.draw.circle(self.display_surface, (255, 0, 0), self.agent.gaze_location, 2)
-                if self.agent.action_goal and (len(self.visible_drift_tiles) > 0):
-                    draw_circle_alpha(surface=self.display_surface, color=(255, 0, 0, 100), center=self.reference_point, radius=degree_to_pixel(1))
+                if self.agent.action_goal and self.agent.drift_situation_action_goal:
+                    draw_circle_alpha(surface=self.display_surface, color=(255, 0, 0, 100), center=self.agent.action_goal, radius=degree_to_pixel(1))
 
                 # draw SoC indicators
                 # low-level
