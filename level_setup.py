@@ -332,13 +332,13 @@ class Level:
                     self.quit = True
                     # write data of all frames to csv
                     self.get_data(scaling)
-                    self.data.to_csv(f'data/{self.code}_output_{self.trial}_{self.n_run:0>2}.csv', sep=',', index=False)
+                    self.data.to_csv(f'data/{self.code}_output_{self.trial}_{self.n_run:0>3}.csv', sep=',', index=False)
             else:
                 self.level_done = True
                 self.quit = True
                 # write data of all frames to csv
                 self.get_data(scaling)
-                self.data.to_csv(f'data/{self.code}_output_{self.trial}_{self.n_run:0>2}.csv', sep=',', index=False)
+                self.data.to_csv(f'data/{self.code}_output_{self.trial}_{self.n_run:0>3}.csv', sep=',', index=False)
 
         elif player.crashed:
             if question_soc:
@@ -351,14 +351,14 @@ class Level:
                     self.quit = True
                     # write data of all frames to csv
                     self.get_data(scaling)
-                    self.data.to_csv(f'data/{self.code}_output_{self.trial}_{self.n_run:0>2}.csv', sep=',', index=False)
+                    self.data.to_csv(f'data/{self.code}_output_{self.trial}_{self.n_run:0>3}.csv', sep=',', index=False)
             else:
                 if self.time_played > self.replay_threshold:
                     self.level_done = True
                 self.quit = True
                 # write data of all frames to csv
                 self.get_data(scaling)
-                self.data.to_csv(f'data/{self.code}_output_{self.trial}_{self.n_run:0>2}.csv', sep=',', index=False)
+                self.data.to_csv(f'data/{self.code}_output_{self.trial}_{self.n_run:0>3}.csv', sep=',', index=False)
 
         else:
             self.level_done = False
