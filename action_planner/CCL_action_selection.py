@@ -345,7 +345,7 @@ def select_drift_path(PAR: dict, observation_in_pixel, reference,
     """
 
     dx = drift_prior*drift_direction
-    dy = 210
+    dy = 210  # dy as variable that's passed; dx needs to be on pixel scale
     #slope = 0.45  # dx/np.shape(observation_in_pixel)[1]  # dx / dy  # expected trajectory
     slope = dx / dy  # expected trajectory
 
@@ -370,7 +370,7 @@ def select_drift_path(PAR: dict, observation_in_pixel, reference,
     #print(f"candidates: {candidate_xs}")
 
     # store best x with corresponding distance score
-    best_x = None
+    best_x = 4.0  # default position
     max_total_dist = 0
 
     # check every x-position as a candidate for the vector
@@ -395,6 +395,7 @@ def select_drift_path(PAR: dict, observation_in_pixel, reference,
                 best_x = x
 
     # convert to pixel coords
+    print(f"action goal x components: best_x={best_x}; kernel_size_x={kernel_size_x}; reference={reference[0]}")
     action_goal_x_coord = best_x * kernel_size_x + kernel_size_x/2 + reference[0]
     #print(f"Best starting x-pixel: {action_goal_x_coord}")
 

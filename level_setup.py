@@ -213,7 +213,7 @@ class Level:
         ###############################################################################################################
         ### Action selection ###
         ###############################################################################################################
-        #self.centering = True
+
         # generate action_goal if none is applied OR assess action goal (vertically and horizontally) if one is applied
         self.action_determined = False
 
@@ -227,8 +227,19 @@ class Level:
             # Drift section of screen but not applying
             elif len(self.visible_drift_tiles) > 0 and self.drift.x == 0:
                 for drift_tile in self.visible_drift_tiles:
-                    if (drift_tile[1] > player.rect.bottom) & \
-                            (drift_tile[1] + (15 * scaling) < (observation_space_size_y - bottom_edge) * scaling):
+                    if drift_tile[1] - (5*scaling) > player.rect.bottom:  # 5: free parameter, when do participants start planning drift section
+                        if drift_tile[1] + (15 * scaling) < (observation_space_size_y - bottom_edge) * scaling:  # condition for full drift section on screen...
+                            drift_size = 15*scaling  # 15=y size of drift
+                        else:  # drift not on screen completely
+                            drift_size = (observation_space_size_y - bottom_edge) * scaling - drift_tile[1]
+
+                        print(f"visible drift size y: {drift_size}")  # pass drift size to select_drift_path
+                        # convolve drift section
+                        drift_situation = self.reference_point[0], drift_tile[1], 532, drift_size
+                        drift_situation_surface = self.display_surface.subsurface(drift_situation)
+                        drift_surface_array = np.transpose(pygame.surfarray.array_green(drift_situation_surface))
+                        drift_surface_array[drift_surface_array > 1] = 1
+
                         # the first drift tile that is below agent
                         if drift_tile[0] < player.rect.x:
                             self.agent.drift_direction = 1
@@ -262,44 +273,6 @@ class Level:
                 self.centering = True
                 self.action_determined = True
                 print("Within Drift section")
-
-            # # Drift section of screen
-            # if len(self.visible_drift_tiles) > 0 and self.visible_drift_tiles[0][1] + (15 * scaling) < player.rect.bottom:
-            #     #self.agent.action_goal = self.reference_point[0] + (532/2)
-            #     self.centering = True
-            #     self.action_determined = True
-            #     print("Passed Drift section")
-            #
-            # # before drift onset while drift section on screen
-            # if self.drift.x == 0 and len(self.visible_drift_tiles) > 0:
-            #     for drift_tile in self.visible_drift_tiles:
-            #         if (drift_tile[1] > player.rect.bottom) & \
-            #                 (drift_tile[1] + (15 * scaling) < (observation_space_size_y - bottom_edge) * scaling):
-            #             # the first drift tile that is below agent
-            #             if drift_tile[0] < player.rect.x:
-            #                 self.agent.drift_direction = 1
-            #             else:
-            #                 self.agent.drift_direction = -1
-            #
-            #             # convolve drift section
-            #             drift_situation = self.reference_point[0], drift_tile[1], 532, 15 * scaling  # 15=y size of drift
-            #             drift_situation_surface = self.display_surface.subsurface(drift_situation)
-            #             drift_surface_array = np.transpose(pygame.surfarray.array_green(drift_situation_surface))
-            #             drift_surface_array[drift_surface_array > 1] = 1
-            #
-            #             self.agent.action_goal = select_drift_path(PAR=self.agent.parameters,
-            #                                                        observation_in_pixel=drift_surface_array,
-            #                                                        reference=self.reference_point,
-            #                                                        drift_prior=self.agent.drift_prior,
-            #                                                        drift_direction=self.agent.drift_direction,
-            #                                                        min_percentage_for_rejection=self.agent.min_percentage_for_rejection)
-            #             self.centering = False
-            #             #self.agent.action_goal = self.reference_point[0] + (532 / 2)
-            #             self.action_determined = True
-            #             print("Incoming Drift situation")
-            #     # otherwise drift section not yet on screen completely, idling/centering
-            #     self.centering = True
-            #     self.action_determined = True
 
         ###############################################################################################################
 
