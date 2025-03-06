@@ -76,7 +76,6 @@ class ActionPlanner:
 
         self.action_goal = None
         self.action_goal_col = None
-        self.drift_situation_action_goal = False
 
         # when is action goal reached (not necessarily if point is met)
         self.target_radius = 5  # radius around action goals that is deemed as sufficiently for action_goal_reached
@@ -101,9 +100,10 @@ class ActionPlanner:
         # offset_y = np.random.randint(-1, 2, 1)[0]
         # vertical movement
         # self.action_goal[1] -= ((2/3 * scaling) * speed) + offset_y
-        self.action_goal[1] -= (scaling * speed)  # + offset_y
+        #self.action_goal[1] -= (scaling * speed)  # + offset_y
         # horizontal movement
-        self.action_goal[0] += (horizontal_movement * scaling * speed)  # + offset_x
+        #self.action_goal[0] += (horizontal_movement * scaling * speed)  # + offset_x
+        #self.action_goal += (horizontal_movement * scaling * speed)
 
     def assess_action_goal(self, observation_in_pixel, reference, radius=12):  # radius that is =5° visual angle?
         """
@@ -151,17 +151,17 @@ class ActionPlanner:
                     # self.HL_SoC = bound(0, 1, self.HL_SoC)
                     self.action_goal = None
 
-    def apply_motor_control(self):
+    def apply_motor_control(self, target_x):
         """
         regulatory control on sensorimotor control layer
         """
-        if self.agent_pos_x > self.action_goal[0] + self.target_radius:
+        if self.agent_pos_x > target_x + self.target_radius:
             self.action = 'Left'
-        elif self.agent_pos_x < self.action_goal[0] - self.target_radius:
+        elif self.agent_pos_x < target_x - self.target_radius:
             self.action = 'Right'
         else:
             self.action = None
-        #print(f"Agent wants to take action: {self.action}")
+        # print(f"Agent wants to take action: {self.action}")
 
     def prediction_error(self):
         """

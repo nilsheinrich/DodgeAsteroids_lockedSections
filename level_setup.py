@@ -14,13 +14,13 @@ from draw_transparent_shapes import draw_rect_alpha, draw_polygon_alpha, draw_ci
 from config import *
 # agent
 from action_planner.action_planner import ActionPlanner
-from action_planner.CCL_action_selection import select_action_goal, sample_gaze_location, select_drift_path
+from action_planner.CCL_action_selection import select_drift_path
 from action_planner.helper_functions import load_parameters_dict
 
 # bad practice but here we go
 import warnings
-warnings.simplefilter(action='ignore', category=FutureWarning)
 
+warnings.simplefilter(action='ignore', category=FutureWarning)
 
 display_keys = False
 question_soc = True
@@ -86,17 +86,19 @@ class Level:
         parameters = load_parameters_dict("action_planner/Data/parameters.txt")
         self.agent = ActionPlanner(free_parameters=parameters,
                                    initial_position_x=self.player.sprite.rect.x + scaling,
-                                   observation_space_in_pixel=[observation_space_size_x*scaling, observation_space_size_y*scaling])
+                                   observation_space_in_pixel=[observation_space_size_x * scaling,
+                                                               observation_space_size_y * scaling])
         self.convolutionGranularity = int(self.agent.parameters['convolutionGranularity'])
 
-        self.action_goal_selected = False
+        self.action_determined = False
+        self.centering = True
 
         # pandas Dataframe in which data of each frame will be stored
         self.columns = ['trial', 'attempt', 'time_played', 'level_size_y', 'player_pos', 'collision', 'current_input',
                         'drift_enabled', 'current_drift', 'level_done',
                         'visible_obstacles', 'last_walls_tile', 'adjacent_wall_tiles_x_pos', 'visible_drift_tiles',
                         'prior', 'SoC',
-                        'action_goal_selected', 'action_goal_x', 'action_goal_y']
+                        'action_goal_x']
 
         self.data = pd.DataFrame(columns=self.columns)
 
@@ -144,7 +146,8 @@ class Level:
         if drift_enabled:
             for i in range(len(drift_ranges)):
                 # drift_info[0]: y_start, [1]: y_end, [2]: direction+magnitude, [3]: visibility
-                drift_tile = DriftTile(drift_ranges[i]['y_start'], drift_ranges[i]['y_end'], drift_tile_size_x, observation_space_size_x, edge,
+                drift_tile = DriftTile(drift_ranges[i]['y_start'], drift_ranges[i]['y_end'], drift_tile_size_x,
+                                       observation_space_size_x, edge,
                                        drift_ranges[i]['direction'], drift_ranges[i]['visibility'], scaling)
                 self.drift_tiles.add(drift_tile)
 
@@ -166,7 +169,12 @@ class Level:
     def get_input(self):
 
         # agent
-        self.agent.apply_motor_control()
+        if self.centering:
+            target_x = self.reference_point[0] + (532/2)
+        else:
+            target_x = self.agent.action_goal
+        self.agent.apply_motor_control(target_x=target_x)
+        #self.agent.apply_motor_control(target_x=self.agent.action_goal)
         self.current_input = self.agent.action
 
         # reset transparency for keys
@@ -187,80 +195,37 @@ class Level:
         player = self.player.sprite
 
         # get reference point
-        reference_point = (self.walls.sprites()[-2].rect.x + scaling, 236)
+        self.reference_point = (self.walls.sprites()[-2].rect.x + scaling, 236)
         # 236 being player.sprite.rect.bottom after approach at the start of level
         # 208 is player.sprite.rect.top; player included in goal-driven visual environment subsection
 
         # observation space
-        observation_space = reference_point[0], reference_point[1], 532, 394
-        surface_subsection = self.display_surface.subsurface(observation_space)
-        surface_array = np.transpose(pygame.surfarray.array_green(surface_subsection))
-        surface_array[surface_array > 1] = 1
-
-        # gaze location
-        #if self.agent.action_goal:
-        #    self.agent.gaze_location = sample_gaze_location(
-        #        HL_SoC=self.agent.HL_SoC,
-        #        observation_in_pixel=surface_array,
-        #        action_goal_x=self.agent.action_goal[0],
-        #        action_goal_y=self.agent.action_goal[1],
-        #        reference=reference_point)
-        #else:
-        #    self.agent.gaze_location = sample_gaze_location(
-        #        HL_SoC=self.agent.HL_SoC,
-        #        observation_in_pixel=surface_array,
-        #        action_goal_x=266,
-        #        action_goal_y=50,
-        #        reference=reference_point)
+        #observation_space = self.reference_point[0], self.reference_point[1], 532, 394
+        #surface_subsection = self.display_surface.subsurface(observation_space)
+        #surface_array = np.transpose(pygame.surfarray.array_green(surface_subsection))
+        #surface_array[surface_array > 1] = 1
 
         # update agents predictions if horizontal movement present (due to action or drift)
         if self.horizontal_movement != 0:
             self.agent.perceived_step_size = abs(self.horizontal_movement)
             self.agent.prediction_error()
 
+        ###############################################################################################################
+        ### Action selection ###
+        ###############################################################################################################
+        #self.centering = True
         # generate action_goal if none is applied OR assess action goal (vertically and horizontally) if one is applied
-        self.action_goal_selected = False
+        self.action_determined = False
 
-        if self.drift.x == 0:  # idling during drift
-            if self.agent.action_goal is None:
-                # drift situation
-                if len(self.visible_drift_tiles) > 0:
-                    for drift_tile in self.visible_drift_tiles:
-                        if (drift_tile[1] > player.rect.bottom) & \
-                                (drift_tile[1] + (15 * scaling) < (observation_space_size_y - bottom_edge) * scaling):
-                            # the first drift tile that is below agent
-                            if drift_tile[0] < player.rect.x:
-                                self.agent.drift_direction = 1
-                            else:
-                                self.agent.drift_direction = -1
-                            drift_situation = reference_point[0], drift_tile[1], 532, 15 * scaling  # 15=y size of drift
-                            drift_situation_surface = self.display_surface.subsurface(drift_situation)
-                            drift_surface_array = np.transpose(pygame.surfarray.array_green(drift_situation_surface))
-                            drift_surface_array[drift_surface_array > 1] = 1
+        while not self.action_determined:
+            # no drift on screen, idling/centering
+            if len(self.visible_drift_tiles) == 0:
+                self.centering = True
+                self.action_determined = True
+                print("No Drift on screen")
 
-                            self.agent.action_goal = [select_drift_path(PAR=self.agent.parameters,
-                                                                        observation_in_pixel=drift_surface_array,
-                                                                        reference=reference_point,
-                                                                        drift_prior=self.agent.drift_prior,
-                                                                        drift_direction=self.agent.drift_direction,
-                                                                        min_percentage_for_rejection=self.agent.min_percentage_for_rejection),
-                                                      drift_tile[1]]
-                            self.reference_point = self.agent.action_goal
-                            self.action_goal_selected = True
-                            self.agent.drift_situation_action_goal = True
-                            break  # only first drift situation is planned
-
-                else:
-                    self.agent.action_goal, self.agent.action_goal_col, _, self.agent.HL_SoC = \
-                        select_action_goal(PAR=self.agent.parameters,
-                                           HL_SoC=self.agent.HL_SoC,
-                                           observation_in_pixel=surface_array,
-                                           reference=reference_point,
-                                           agent_pos_x=self.agent.agent_pos_x,
-                                           min_percentage_for_rejection=self.agent.min_percentage_for_rejection)
-                    self.action_goal_selected = True
-                    self.agent.drift_situation_action_goal = False
-            elif self.agent.action_goal and not self.agent.drift_situation_action_goal and len(self.visible_drift_tiles) > 0 and (self.visible_drift_tiles[0][1] + (15 * scaling) < (observation_space_size_y - bottom_edge) * scaling):
+            # Drift section of screen but not applying
+            elif len(self.visible_drift_tiles) > 0 and self.drift.x == 0:
                 for drift_tile in self.visible_drift_tiles:
                     if (drift_tile[1] > player.rect.bottom) & \
                             (drift_tile[1] + (15 * scaling) < (observation_space_size_y - bottom_edge) * scaling):
@@ -269,39 +234,77 @@ class Level:
                             self.agent.drift_direction = 1
                         else:
                             self.agent.drift_direction = -1
-                        drift_situation = reference_point[0], drift_tile[1], 532, 15 * scaling  # 15=y size of drift
+
+                        # convolve drift section
+                        drift_situation = self.reference_point[0], drift_tile[1], 532, 15 * scaling  # 15=y size of drift
                         drift_situation_surface = self.display_surface.subsurface(drift_situation)
                         drift_surface_array = np.transpose(pygame.surfarray.array_green(drift_situation_surface))
                         drift_surface_array[drift_surface_array > 1] = 1
 
-                        self.agent.action_goal = [select_drift_path(PAR=self.agent.parameters,
-                                                                    observation_in_pixel=drift_surface_array,
-                                                                    reference=reference_point,
-                                                                    drift_prior=self.agent.drift_prior,
-                                                                    drift_direction=self.agent.drift_direction,
-                                                                    min_percentage_for_rejection=self.agent.min_percentage_for_rejection),
-                                                  drift_tile[1]]
-                        self.reference_point = self.agent.action_goal
-                        self.action_goal_selected = True
-                        self.agent.drift_situation_action_goal = True
+                        self.agent.action_goal = select_drift_path(PAR=self.agent.parameters,
+                                                                   observation_in_pixel=drift_surface_array,
+                                                                   reference=self.reference_point,
+                                                                   drift_prior=self.agent.drift_prior,
+                                                                   drift_direction=self.agent.drift_direction,
+                                                                   min_percentage_for_rejection=self.agent.min_percentage_for_rejection)
+                        self.centering = False
+                        self.action_determined = True
+                        print("Incoming Drift situation")
                         break
-            elif self.agent.action_goal:
-                # monitoring application of selected action goal
-                self.agent.assess_action_goal(observation_in_pixel=surface_array, reference=reference_point, radius=scaling)
-                if self.agent.action_goal is None:
-                    self.agent.action_goal, self.agent.action_goal_col, _, self.agent.HL_SoC = \
-                        select_action_goal(PAR=self.agent.parameters,
-                                           HL_SoC=self.agent.HL_SoC,
-                                           observation_in_pixel=surface_array,
-                                           reference=reference_point,
-                                           agent_pos_x=self.agent.agent_pos_x,
-                                           min_percentage_for_rejection=self.agent.min_percentage_for_rejection)
-                    self.action_goal_selected = True
-                    self.agent.drift_situation_action_goal = False
+                # otherwise drift section not yet on screen completely, idling/centering
+                if not self.action_determined:
+                    self.centering = True
+                    self.action_determined = True
+                    print("Drift on screen but either not complete or passed")
+
+            # within drift section, idling/centering
+            elif len(self.visible_drift_tiles) > 0 and self.drift.x != 0:
+                self.centering = True
+                self.action_determined = True
+                print("Within Drift section")
+
+            # # Drift section of screen
+            # if len(self.visible_drift_tiles) > 0 and self.visible_drift_tiles[0][1] + (15 * scaling) < player.rect.bottom:
+            #     #self.agent.action_goal = self.reference_point[0] + (532/2)
+            #     self.centering = True
+            #     self.action_determined = True
+            #     print("Passed Drift section")
+            #
+            # # before drift onset while drift section on screen
+            # if self.drift.x == 0 and len(self.visible_drift_tiles) > 0:
+            #     for drift_tile in self.visible_drift_tiles:
+            #         if (drift_tile[1] > player.rect.bottom) & \
+            #                 (drift_tile[1] + (15 * scaling) < (observation_space_size_y - bottom_edge) * scaling):
+            #             # the first drift tile that is below agent
+            #             if drift_tile[0] < player.rect.x:
+            #                 self.agent.drift_direction = 1
+            #             else:
+            #                 self.agent.drift_direction = -1
+            #
+            #             # convolve drift section
+            #             drift_situation = self.reference_point[0], drift_tile[1], 532, 15 * scaling  # 15=y size of drift
+            #             drift_situation_surface = self.display_surface.subsurface(drift_situation)
+            #             drift_surface_array = np.transpose(pygame.surfarray.array_green(drift_situation_surface))
+            #             drift_surface_array[drift_surface_array > 1] = 1
+            #
+            #             self.agent.action_goal = select_drift_path(PAR=self.agent.parameters,
+            #                                                        observation_in_pixel=drift_surface_array,
+            #                                                        reference=self.reference_point,
+            #                                                        drift_prior=self.agent.drift_prior,
+            #                                                        drift_direction=self.agent.drift_direction,
+            #                                                        min_percentage_for_rejection=self.agent.min_percentage_for_rejection)
+            #             self.centering = False
+            #             #self.agent.action_goal = self.reference_point[0] + (532 / 2)
+            #             self.action_determined = True
+            #             print("Incoming Drift situation")
+            #     # otherwise drift section not yet on screen completely, idling/centering
+            #     self.centering = True
+            #     self.action_determined = True
+
+        ###############################################################################################################
 
         # get input from agent, but only when there is no drift
-        #if self.drift.x == 0:
-            #print(f" action goal: {self.agent.action_goal[0]}; spaceship horizontal position: {player.rect.x}")
+        if self.drift.x == 0:
             self.get_input()
         else:
             self.direction.x = 0
@@ -371,9 +374,9 @@ class Level:
         frame_data.at[0, 'visible_drift_tiles'] = self.visible_drift_tiles
 
         # action goal
-        frame_data.action_goal_selected = self.action_goal_selected
-        frame_data.action_goal_x = self.agent.action_goal[0]
-        frame_data.action_goal_y = self.agent.action_goal[1]
+        frame_data.action_goal_x = self.agent.action_goal
+        #frame_data.action_goal_x = self.agent.action_goal[0]
+        #frame_data.action_goal_y = self.agent.action_goal[1]
 
         # append everything to pandas DataFrame
         self.data = pd.concat([self.data, frame_data], ignore_index=True)
@@ -486,12 +489,13 @@ class Level:
                 self.player.draw(self.display_surface)
 
                 # draw transparent circle around action goal
-                #draw_circle_alpha(surface=self.display_surface, color=(255, 0, 0, 100), center=self.agent.gaze_location,
+                # draw_circle_alpha(surface=self.display_surface, color=(255, 0, 0, 100), center=self.agent.gaze_location,
                 #                  radius=degree_to_pixel(1))
                 # draw fixated action goal
-                #pygame.draw.circle(self.display_surface, (255, 0, 0), self.agent.gaze_location, 2)
-                if self.agent.action_goal and self.agent.drift_situation_action_goal:
-                    draw_circle_alpha(surface=self.display_surface, color=(255, 0, 0, 100), center=self.agent.action_goal, radius=degree_to_pixel(1))
+                # pygame.draw.circle(self.display_surface, (255, 0, 0), self.agent.gaze_location, 2)
+                #if self.agent.action_goal and self.agent.drift_situation_action_goal:
+                #    draw_circle_alpha(surface=self.display_surface, color=(255, 0, 0, 100),
+                #                      center=self.agent.action_goal, radius=degree_to_pixel(1))
 
                 # draw SoC indicators
                 # low-level

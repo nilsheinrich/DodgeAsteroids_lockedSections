@@ -339,7 +339,7 @@ def sample_gaze_location(HL_SoC: float, observation_in_pixel, action_goal_x, act
 
 def select_drift_path(PAR: dict, observation_in_pixel, reference,
                       drift_prior, drift_direction,
-                      min_percentage_for_rejection: float, debug=True):
+                      min_percentage_for_rejection: float, debug=False):
     """
     ...
     """
@@ -395,7 +395,7 @@ def select_drift_path(PAR: dict, observation_in_pixel, reference,
                 best_x = x
 
     # convert to pixel coords
-    action_goal_x_coord = best_x + kernel_size_x/2 + reference[0]
+    action_goal_x_coord = best_x * kernel_size_x + kernel_size_x/2 + reference[0]
     #print(f"Best starting x-pixel: {action_goal_x_coord}")
 
     ############################################
@@ -439,7 +439,6 @@ def select_drift_path(PAR: dict, observation_in_pixel, reference,
         # draw expected trajectory
         #ax.ax_joint.plot([action_goal_x_coord, 0], [action_goal_x_coord+slope*dy, number_vertical_strides*kernel_size_y], marker='o', c="green")
         #ax.ax_joint.axvline(action_goal_x_coord, c="green")
-        print(f"slope: {slope}; best starting x-pixel: {action_goal_x_coord}; expected end x-pixel: {action_goal_x_coord+slope*dy}")
         ax.ax_joint.axvline(action_goal_x_coord, c="blue")
         ax.ax_joint.axvline(action_goal_x_coord+slope*dy, c="green")
         #ax.ax_joint.plot([0, 0], [534, 200], marker='o', c="green")
@@ -455,5 +454,5 @@ def select_drift_path(PAR: dict, observation_in_pixel, reference,
         plt.savefig('plots/drift_situation.png')
         plt.close('all')
     ############################################
-
+    print(f"slope: {slope}; best x unconverted: {best_x}; best starting x-pixel: {action_goal_x_coord}; expected end x-pixel: {action_goal_x_coord + slope * dy}")
     return action_goal_x_coord
