@@ -4,6 +4,7 @@ __pycache__
 **/.DS_Store
 logs/old
 data/*
+plots/*
 plot_level_layout.py
 .Rhistory
 .ipynb_checkpoints
