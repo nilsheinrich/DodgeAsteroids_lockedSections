@@ -13,79 +13,67 @@ import sys
 np.set_printoptions(threshold=sys.maxsize)
 
 
-def pool_observation(PAR: dict, observation_in_pixel, resample=False):
+def pool_observation(observation_in_pixel, convolutionGranularity, resample=False):
     """
     Observation in pixel is pooled into an number of kernels with the number of kernels/pools given by
     the free parameter convolutionGranularity. The higher the value, the more granular is the
     representation of the visual environment. Kernels are subsequently convolved for mean pixel activation.
     """
-    # df = pd.DataFrame(data=observation_in_pixel[0:, 0:],
-    #                  index=[i for i in range(observation_in_pixel.shape[0])],
-    #                  columns=['f' + str(i) for i in range(observation_in_pixel.shape[1])])
-    # df.to_csv("surfarray.csv", sep=',', index=False)
-    # resampling? then highest granularity by default
+
     if resample:
-        convolutionGranularity = 81
+        convolutionGranularity = 180
     else:
-        convolutionGranularity = PAR["convolutionGranularity"]
+        convolutionGranularity=convolutionGranularity
 
-    # pooling
-    number_horizontal_strides = math.ceil(np.sqrt(convolutionGranularity))
+    ratio = observation_in_pixel.shape[0] / observation_in_pixel.shape[1]  # ratio of rows to values in rows
+
+    number_horizontal_strides = math.ceil(np.sqrt(convolutionGranularity / ratio))
+    number_vertical_strides = math.ceil(convolutionGranularity / number_horizontal_strides)
+
     kernel_size_x = math.ceil(np.shape(observation_in_pixel)[1] / number_horizontal_strides)
-    number_vertical_strides = int(convolutionGranularity / number_horizontal_strides)
-
-    """
-    There might be need for a dynamic granularity: when under the default granularity no valid action goal can be
-    determined, granularity might be increased to search for free spaces in between pools that were populated before 
-    under smaller granularity.
-    """
-    # the following code is for a dynamic granularity, in which the number of pools is directly influenced by HL_SoC
-    # convolutionGranularity = HL_SoC_convolutionGranularity_dict[round(HL_SoC, 1)]
-    # number_horizontal_strides = math.ceil(np.sqrt(convolutionGranularity))
-    # kernel_size_x = math.ceil(np.shape(observation_in_pixel)[1] / number_horizontal_strides)
-    # number_vertical_strides = convolutionGranularity / number_horizontal_strides
-
     kernel_size_y = math.ceil(np.shape(observation_in_pixel)[0] / number_vertical_strides)
 
     pooled_observation = skimage.measure.block_reduce(observation_in_pixel, (kernel_size_y, kernel_size_x), np.mean)
     # print(f"pooled_observation: {pooled_observation}, dimensions={len(pooled_observation[0])}*{len(pooled_observation)}")
+
     return kernel_size_x, kernel_size_y, pooled_observation, number_horizontal_strides, number_vertical_strides
 
 
-def convolve_observation(PAR: dict, observation_in_pixel, min_percentage_for_rejection, resample=False):
+def convolve_observation(observation_in_pixel, convolutionGranularity, min_percentage_for_rejection,
+                         drift_situation=False, resample=False):
     """
     Every kernel of mean observation in pixel from pooled_observation is compared with
     min_percentage_for_rejection. If mean activation in kernel is higher than min_percentage_for_rejection, then
     1 is associated with kernel, reflecting the rejection of this specific possible action goal.
     """
 
-    kernel_size_x, kernel_size_y, pooled_observation, number_horizontal_strides, number_vertical_strides = pool_observation(PAR, observation_in_pixel, resample=resample)
+    kernel_size_x, kernel_size_y, pooled_observation, number_horizontal_strides, number_vertical_strides = \
+        pool_observation(observation_in_pixel, convolutionGranularity, resample=resample)
 
     # identify rejected action possibilities
-    # print(f'activation in cells: \n{pooled_observation}')
     rejected_action_possibilities = list(zip(*np.where(pooled_observation > min_percentage_for_rejection)))
-    # print(f"rejected_action_possibilities = {rejected_action_possibilities}")
     action_field = list(zip(*np.where(pooled_observation < min_percentage_for_rejection)))
-    # print(f"action_field before filter = {action_field}")
-    # delete each possible in possibles that shares second digit with one in rejected and
-    # the first digit of which is larger
-    rejects = []
-    for reject in rejected_action_possibilities:
-        # rejects contains all goals on the same horizontal position as rejected_action_possibilities,
-        # but vertically below rejected_action_possibilities
-        rejects = [i for i in action_field if i[1] == reject[1] and i[0] > reject[0]]
+
+    if drift_situation:
+        # delete each possible in possibles that shares second digit with one in rejected and
+        # the first digit of which is larger
+        rejects = []
+        for reject in rejected_action_possibilities:
+            # rejects contains all goals on the same horizontal position as rejected_action_possibilities,
+            # but vertically below rejected_action_possibilities
+            rejects_ = [i for i in action_field if i[1] == reject[1] and i[0] > reject[0]]
+            rejects = rejects + rejects_
+
         # only keep elements in action_field that are NOT in rejects
         action_field = [i for i in action_field if i not in rejects]
-    # print(f"action_field: {action_field}")
-
-    # assess time taken for conscious broadcast
-    broadcast_time = np.random.uniform(200, 280, 1)
-    # print(f"action field: {action_field}; rejected action possibilities: {rejected_action_possibilities}")
+        rejected_action_possibilities = rejected_action_possibilities + rejects
 
     # also passing pooled observation
     pooled_observation = (pooled_observation > min_percentage_for_rejection).astype(int)
 
-    return kernel_size_x, kernel_size_y, action_field, number_horizontal_strides, number_vertical_strides, broadcast_time, rejected_action_possibilities, rejects, pooled_observation
+    # print(f"action field: {action_field}; rejected action possibilities: {rejected_action_possibilities}")
+
+    return kernel_size_x, kernel_size_y, action_field, number_horizontal_strides, number_vertical_strides, rejected_action_possibilities, pooled_observation
 
 
 def select_action_goal(PAR: dict, HL_SoC: float, observation_in_pixel, reference: tuple,
@@ -259,125 +247,48 @@ def select_action_goal(PAR: dict, HL_SoC: float, observation_in_pixel, reference
     return [highest_activation_x, highest_activation_y], action_goal_col, time, HL_SoC
 
 
-def sample_gaze_location(HL_SoC: float, observation_in_pixel, action_goal_x, action_goal_y,
-                         reference: tuple, debug=False):
-
-    # find coordinates where the value is
-    # =0, for free space
-    # =1, for populated space
-    zero_coords = np.argwhere(observation_in_pixel == 1)
-
-    # extract x and y coordinates
-    x_coords = zero_coords[:, 1]
-    y_coords = zero_coords[:, 0]
-
-    activations = pd.DataFrame({'x_coords': x_coords, 'y_coords': y_coords})
-
-    # kernel density
-    x_density = st.gaussian_kde(activations.x_coords)
-    y_density = st.gaussian_kde(activations.y_coords)
-    # axis objects
-    # x_axis = np.arange(1, observation_in_pixel.shape[1] + 1, 1)
-    # y_axis = np.arange(1, observation_in_pixel.shape[0] + 1, 1)
-    x_axis = np.arange(28, observation_in_pixel.shape[1] - 28, 1)
-    y_axis = np.arange(28, observation_in_pixel.shape[0] - 28, 1)
-
-    # bottom-up saliency map
-    saliency_map_x = x_density.evaluate(x_axis)
-    saliency_map_y = y_density.evaluate(y_axis)
-
-    inv_saliency_map_x = (1 - saliency_map_x) / (1 - saliency_map_x).sum()
-    inv_saliency_map_y = (1 - saliency_map_y) / (1 - saliency_map_y).sum()
-
-    action_goal_map_x = likelihood_function(space=x_axis, mu=action_goal_x-reference[0], sigma=80)
-    action_goal_map_y = likelihood_function(space=y_axis, mu=action_goal_y-reference[1], sigma=80)
-
-    # compute posterior for each axis individually while inflating agent_map (=task_focus)
-    posterior_x = normalized_posterior(prior=1000**action_goal_map_x,
-                                       likelihood=inv_saliency_map_x,
-                                       prior_weight=1-HL_SoC)
-    posterior_y = normalized_posterior(prior=1000**action_goal_map_y,
-                                       likelihood=inv_saliency_map_y,
-                                       prior_weight=1-HL_SoC)
-
-    # sampling from posterior to obtain selected action goal
-    # final_gaze_x = np.random.choice(len(posterior_x), p=posterior_x) + reference[0]
-    # final_gaze_y = np.random.choice(len(posterior_y), p=posterior_y) + reference[1]
-
-    # location of highest activation is selected as action goal; adding reference for pixel coordinates
-    final_gaze_x = pd.Series(posterior_x).idxmax() + reference[0]
-    final_gaze_y = pd.Series(posterior_y).idxmax() + reference[1]
-
-    if debug:
-        populated_space_activations = pd.DataFrame({'x_coords': x_coords,
-                                                    'y_coords': y_coords})
-
-        # Plotting action field
-        fig, ax = plt.subplots(1, 1, figsize=(6, 5))
-
-        plt.style.use("dark_background")
-
-        ax = sns.jointplot(data=populated_space_activations, x="x_coords", y="y_coords", color="w", space=0)
-
-        # draw integrated action goal (bottom-up + top-down)
-        ax.ax_joint.axvline(final_gaze_x-reference[0], c="green")
-        ax.ax_joint.axhline(final_gaze_y-reference[1], c="green")
-
-        ax.ax_joint.get_xaxis().set_visible(False)
-        ax.ax_joint.get_yaxis().set_visible(False)
-
-        ax.ax_marg_x.set_xlim(0, observation_in_pixel.shape[1])
-        ax.ax_marg_y.set_ylim(0, observation_in_pixel.shape[0])
-
-        ax.fig.axes[0].invert_yaxis()
-
-        plt.savefig(f'plots/kerneled_vis_map_{HL_SoC}.png')
-        plt.close('all')
-
-    return [final_gaze_x, final_gaze_y]
-
-
-def select_drift_path(PAR: dict, observation_in_pixel, reference,
-                      drift_prior, drift_direction,
+def select_drift_path(PAR: dict, observation_in_pixel, drift_prior, drift_direction,
                       min_percentage_for_rejection: float, debug=False):
     """
     ...
     """
+    #np.savetxt("observation.csv", observation_in_pixel, delimiter=",")
 
-    dx = drift_prior*drift_direction
+    dx = drift_prior * drift_direction
     dy = 210  # dy as variable that's passed; dx needs to be on pixel scale
-    #slope = 0.45  # dx/np.shape(observation_in_pixel)[1]  # dx / dy  # expected trajectory
+    # dy = observation_space_size_y
+    # slope = 0.45  # dx/np.shape(observation_in_pixel)[1]  # dx / dy  # expected trajectory
     slope = dx / dy  # expected trajectory
 
-    kernel_size_x, kernel_size_y, action_field, number_horizontal_strides, number_vertical_strides, time, rejected_action_possibilities, rejects, pooled_observation = convolve_observation(PAR, observation_in_pixel, min_percentage_for_rejection)
+    convolutionGranularity = PAR["convolutionGranularity"]
 
-    # just for a quick switch between pixel map and pooled observation
-    #pooled_observation = observation_in_pixel
+    kernel_size_x, kernel_size_y, action_field, number_horizontal_strides, number_vertical_strides, rejected_action_possibilities, pooled_observation = \
+        convolve_observation(observation_in_pixel, convolutionGranularity, min_percentage_for_rejection)
 
     # all positions within grid that are =1
     ones_positions = np.argwhere(pooled_observation == 1)
 
-    #print(f"slope:{slope}; kernel:{kernel_size_y}, {kernel_size_x}, dimensions:{np.shape(pooled_observation)}")
-
     # possible starting positions (accounting for end point remains within grid)
-    if dx > 0:  # Positive slope
-        min_x_start, max_x_start = 0, pooled_observation.shape[1] - slope
-    else:  # Negative slope
-        min_x_start, max_x_start = abs(slope), pooled_observation.shape[1] - 1
+    if dx > 0:  # positive slope
+        min_x_start, max_x_start = 0, pooled_observation.shape[1] - slope * number_vertical_strides
+    else:  # negative slope
+        min_x_start, max_x_start = abs(slope * number_vertical_strides), pooled_observation.shape[1] - 1
 
     # identifying potential starting positions
     candidate_xs = np.arange(min_x_start, max_x_start + 1)
-    #print(f"candidates: {candidate_xs}")
+    candidate_array = np.array([(int(x), 0) for x in candidate_xs])
 
     # store best x with corresponding distance score
-    best_x = 4.0  # default position
+    best_x = None  # maybe centered default position?
+    expected_trajectory = None
     max_total_dist = 0
 
     # check every x-position as a candidate for the vector
-    for x in candidate_xs:
-        # get all points along the vertical vector at x
-        vector_points = np.array(
-            [[x + round(y * slope), y] for y in range(dy) if 0 <= x + round(y * slope) < pooled_observation.shape[1]])
+    for candidate in candidate_array:
+        vector_points = [candidate]
+        for stride in range(1, number_vertical_strides + 1):
+            vector_point = [candidate[0] + stride * slope, stride]
+            vector_points.append(vector_point)
 
         if ones_positions.size > 0 and len(vector_points) > 0:
             # compute distances from all points on the vector to all 1s
@@ -386,20 +297,18 @@ def select_drift_path(PAR: dict, observation_in_pixel, reference,
             # find the closest 1 for each point on the vector
             min_dists_per_point = np.min(dists, axis=1)
 
-            # find the worst-case (minimum) distance along the vector
+            # total distance along the vector
             total_dist_along_vector = np.sum(min_dists_per_point)
+
+            # print(f"candidate={x}, vector_points={vector_points}, vector_len={len(vector_points)}")
 
             # update if this x is better
             if total_dist_along_vector > max_total_dist:
                 max_total_dist = total_dist_along_vector
-                best_x = x
+                best_x = candidate[0]
+                expected_trajectory = vector_points
 
-    # convert to pixel coords
-    print(f"action goal x components: best_x={best_x}; kernel_size_x={kernel_size_x}; reference={reference[0]}")
-    action_goal_x_coord = best_x * kernel_size_x + kernel_size_x/2 + reference[0]
-    #print(f"Best starting x-pixel: {action_goal_x_coord}")
-
-    ############################################
+    # plotting
     if debug:
         # store where there is populated space, meaning there are obstacles
         populated_space_zero_coords = np.argwhere(observation_in_pixel == 1)
@@ -437,13 +346,6 @@ def select_drift_path(PAR: dict, observation_in_pixel, reference,
                                          facecolor='r', alpha=0.4)
                 ax.ax_joint.add_patch(rect)
 
-        # draw expected trajectory
-        #ax.ax_joint.plot([action_goal_x_coord, 0], [action_goal_x_coord+slope*dy, number_vertical_strides*kernel_size_y], marker='o', c="green")
-        #ax.ax_joint.axvline(action_goal_x_coord, c="green")
-        ax.ax_joint.axvline(action_goal_x_coord, c="blue")
-        ax.ax_joint.axvline(action_goal_x_coord+slope*dy, c="green")
-        #ax.ax_joint.plot([0, 0], [534, 200], marker='o', c="green")
-
         ax.ax_joint.get_xaxis().set_visible(False)
         ax.ax_joint.get_yaxis().set_visible(False)
 
@@ -454,6 +356,5 @@ def select_drift_path(PAR: dict, observation_in_pixel, reference,
 
         plt.savefig('plots/drift_situation.png')
         plt.close('all')
-    ############################################
-    print(f"slope: {slope}; best x unconverted: {best_x}; best starting x-pixel: {action_goal_x_coord}; expected end x-pixel: {action_goal_x_coord + slope * dy}")
-    return action_goal_x_coord
+
+    return best_x, expected_trajectory, kernel_size_x, kernel_size_y

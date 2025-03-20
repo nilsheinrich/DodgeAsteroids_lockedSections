@@ -48,6 +48,8 @@ class Level:
         self.direction = pygame.math.Vector2(0, 0)
         # environmentally imposed drift
         self.drift = pygame.math.Vector2(0, 0)
+        # environmentally imposed drift of previous frame
+        self.previous_drift = pygame.math.Vector2(0, 0)
         # player input
         self.current_input = None  # None vs. 'Right' vs. 'Left'
         # total horizontal movement combined of agent imposed direction and environmentally imposed drift
@@ -170,11 +172,11 @@ class Level:
 
         # agent
         if self.centering:
-            target_x = self.reference_point[0] + (532/2)
+            target_x = self.reference_point[0] + (532 / 2)
         else:
-            target_x = self.agent.action_goal
+            target_x = self.agent.action_goal[0]
         self.agent.apply_motor_control(target_x=target_x)
-        #self.agent.apply_motor_control(target_x=self.agent.action_goal)
+        # self.agent.apply_motor_control(target_x=self.agent.action_goal)
         self.current_input = self.agent.action
 
         # reset transparency for keys
@@ -200,10 +202,19 @@ class Level:
         # 208 is player.sprite.rect.top; player included in goal-driven visual environment subsection
 
         # observation space
-        #observation_space = self.reference_point[0], self.reference_point[1], 532, 394
-        #surface_subsection = self.display_surface.subsurface(observation_space)
-        #surface_array = np.transpose(pygame.surfarray.array_green(surface_subsection))
-        #surface_array[surface_array > 1] = 1
+        # observation_space = self.reference_point[0], self.reference_point[1], 532, 394
+        # surface_subsection = self.display_surface.subsurface(observation_space)
+        # surface_array = np.transpose(pygame.surfarray.array_green(surface_subsection))
+        # surface_array[surface_array > 1] = 1
+
+        # check drift start/stop in agent model
+        if self.previous_drift.x == 0 and self.drift.x != 0:  # drift start
+            self.agent.store_drift_movement = True
+            self.agent.cumulative_drift_move += abs(self.horizontal_movement)
+        elif self.previous_drift.x != 0 and self.drift.x == 0:  # drift stop
+            self.agent.store_drift_movement = False
+            self.agent.drift_prior = self.agent.cumulative_drift_move
+            self.agent.cumulative_drift_move = 0
 
         # update agents predictions if horizontal movement present (due to action or drift)
         if self.horizontal_movement != 0:
@@ -222,23 +233,20 @@ class Level:
             if len(self.visible_drift_tiles) == 0:
                 self.centering = True
                 self.action_determined = True
-                print("No Drift on screen")
+                # print("No Drift on screen")
 
             # Drift section of screen but not applying
             elif len(self.visible_drift_tiles) > 0 and self.drift.x == 0:
                 for drift_tile in self.visible_drift_tiles:
-                    if drift_tile[1] - (5*scaling) > player.rect.bottom:  # 5: free parameter, when do participants start planning drift section
-                        if drift_tile[1] + (15 * scaling) < (observation_space_size_y - bottom_edge) * scaling:  # condition for full drift section on screen...
-                            drift_size = 15*scaling  # 15=y size of drift
+                    if drift_tile[1] - (
+                            5 * scaling) > player.rect.bottom:  # 5: free parameter, when do participants start planning drift section
+                        # condition for full drift section on screen...
+                        if drift_tile[1] + (15 * scaling) < (observation_space_size_y - bottom_edge) * scaling:
+                            drift_size = 15 * scaling  # 15=y size of drift
                         else:  # drift not on screen completely
                             drift_size = (observation_space_size_y - bottom_edge) * scaling - drift_tile[1]
 
-                        print(f"visible drift size y: {drift_size}")  # pass drift size to select_drift_path
-                        # convolve drift section
-                        drift_situation = self.reference_point[0], drift_tile[1], 532, drift_size
-                        drift_situation_surface = self.display_surface.subsurface(drift_situation)
-                        drift_surface_array = np.transpose(pygame.surfarray.array_green(drift_situation_surface))
-                        drift_surface_array[drift_surface_array > 1] = 1
+                        # print(f"visible drift size y: {drift_size}")  # pass drift size to select_drift_path
 
                         # the first drift tile that is below agent
                         if drift_tile[0] < player.rect.x:
@@ -247,32 +255,37 @@ class Level:
                             self.agent.drift_direction = -1
 
                         # convolve drift section
-                        drift_situation = self.reference_point[0], drift_tile[1], 532, 15 * scaling  # 15=y size of drift
+                        drift_situation = self.reference_point[0], drift_tile[
+                            1], 532, 15 * scaling  # 15: y size of drift section
                         drift_situation_surface = self.display_surface.subsurface(drift_situation)
                         drift_surface_array = np.transpose(pygame.surfarray.array_green(drift_situation_surface))
                         drift_surface_array[drift_surface_array > 1] = 1
 
-                        self.agent.action_goal = select_drift_path(PAR=self.agent.parameters,
-                                                                   observation_in_pixel=drift_surface_array,
-                                                                   reference=self.reference_point,
-                                                                   drift_prior=self.agent.drift_prior,
-                                                                   drift_direction=self.agent.drift_direction,
-                                                                   min_percentage_for_rejection=self.agent.min_percentage_for_rejection)
+                        best_x, expected_trajectory, kernel_size_x, kernel_size_y = select_drift_path(
+                            PAR=self.agent.parameters,
+                            observation_in_pixel=drift_surface_array,
+                            drift_prior=self.agent.drift_prior,
+                            drift_direction=self.agent.drift_direction,
+                            min_percentage_for_rejection=self.agent.min_percentage_for_rejection)
+
+                        self.agent.action_goal = [self.reference_point[0] + best_x * kernel_size_x - kernel_size_x / 2,
+                                                  drift_tile[1]]
+
                         self.centering = False
                         self.action_determined = True
-                        print("Incoming Drift situation")
+                        # print("Incoming Drift situation")
                         break
                 # otherwise drift section not yet on screen completely, idling/centering
                 if not self.action_determined:
                     self.centering = True
                     self.action_determined = True
-                    print("Drift on screen but either not complete or passed")
+                    # print("Drift on screen but either not complete or passed")
 
             # within drift section, idling/centering
             elif len(self.visible_drift_tiles) > 0 and self.drift.x != 0:
                 self.centering = True
                 self.action_determined = True
-                print("Within Drift section")
+                # print("Within Drift section")
 
         ###############################################################################################################
 
@@ -304,6 +317,7 @@ class Level:
 
     def check_for_drift(self):
         player = self.player.sprite
+        self.previous_drift = self.drift
         self.drift.x = 0
 
         for sprite in self.drift_tiles.sprites():
@@ -347,9 +361,10 @@ class Level:
         frame_data.at[0, 'visible_drift_tiles'] = self.visible_drift_tiles
 
         # action goal
-        frame_data.action_goal_x = self.agent.action_goal
-        #frame_data.action_goal_x = self.agent.action_goal[0]
-        #frame_data.action_goal_y = self.agent.action_goal[1]
+        try:
+            frame_data.action_goal_x = self.agent.action_goal[0]
+        except:
+            frame_data.action_goal_x = self.agent.action_goal
 
         # append everything to pandas DataFrame
         self.data = pd.concat([self.data, frame_data], ignore_index=True)
@@ -437,7 +452,7 @@ class Level:
                     self.finish_line.update(velocity, scaling, self.horizontal_movement)
 
                     # update action goal
-                    self.agent.update_action_goal(velocity, scaling, self.horizontal_movement)
+                    # self.agent.update_action_goal(velocity, scaling, self.horizontal_movement)
 
                 # check for collision
                 self.check_for_collision()
@@ -466,7 +481,7 @@ class Level:
                 #                  radius=degree_to_pixel(1))
                 # draw fixated action goal
                 # pygame.draw.circle(self.display_surface, (255, 0, 0), self.agent.gaze_location, 2)
-                #if self.agent.action_goal and self.agent.drift_situation_action_goal:
+                # if self.agent.action_goal and self.agent.drift_situation_action_goal:
                 #    draw_circle_alpha(surface=self.display_surface, color=(255, 0, 0, 100),
                 #                      center=self.agent.action_goal, radius=degree_to_pixel(1))
 

@@ -41,6 +41,8 @@ class ActionPlanner:
         #                                       mu=230,  # true value
         #                                       sigma=50)  # well informed prior
         self.drift_prior = 230
+        self.store_drift_movement = False
+        self.cumulative_drift_move = 0
         self.drift_direction = None
 
         # horizontal movement either by own action or by drift
