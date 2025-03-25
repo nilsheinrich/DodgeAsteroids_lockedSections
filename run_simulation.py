@@ -60,6 +60,9 @@ list_of_attempt_dict_keys = list(attempt_dict.keys())
 
 max_attempts = 3  # maximum number of attempts given to solve trial
 
+# agent
+LL_SoC = 0.5
+HL_SoC = 0.5
 
 # start experimental procedure
 quit = False
@@ -80,14 +83,15 @@ while not quit:
             random.shuffle(list_of_attempt_dict_keys)
             trial = list_of_attempt_dict_keys[0]
 
-            level_done = run_visualization(surface=screen, scaling=scaling, FPS=FPS,
-                                           obstacles_list_file=f'object_list_{trial[0]}.csv',
-                                           drift_ranges_file=f'drift_ranges_{trial[0]}.csv',
-                                           wall_list_file=f'walls_dict.csv',
-                                           drift_enabled=trial[1],
-                                           trial=trial[0],
-                                           attempt=attempt_dict[trial]+1,
-                                           n_run=n_run, code=code)
+            level_done, LL_SoC, HL_SoC = run_visualization(surface=screen, scaling=scaling, FPS=FPS,
+                                                           obstacles_list_file=f'object_list_{trial[0]}.csv',
+                                                           drift_ranges_file=f'drift_ranges_{trial[0]}.csv',
+                                                           wall_list_file=f'walls_dict.csv',
+                                                           LL_SoC=LL_SoC, HL_SoC=HL_SoC,
+                                                           drift_enabled=trial[1],
+                                                           trial=trial[0],
+                                                           attempt=attempt_dict[trial]+1,
+                                                           n_run=n_run, code=code)
             n_run += 1
             attempt_dict[trial] += 1
 

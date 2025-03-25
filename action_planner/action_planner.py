@@ -7,7 +7,7 @@ from action_planner.CCL_action_selection import pool_observation
 
 
 class ActionPlanner:
-    def __init__(self, free_parameters, initial_position_x, observation_space_in_pixel):
+    def __init__(self, free_parameters, LL_SoC, HL_SoC, initial_position_x, observation_space_in_pixel):
         self.parameters = free_parameters
 
         # begin counting from here
@@ -18,8 +18,8 @@ class ActionPlanner:
             self.parameters['convolutionGranularity']]
 
         # sense of control for SCL (LL) & CCL (HL)
-        self.LL_SoC = 0.5
-        self.HL_SoC = 0.5
+        self.LL_SoC = LL_SoC
+        self.HL_SoC = HL_SoC
 
         # observation in pixel
         self.observation_space_x_in_pixel = np.linspace(0, observation_space_in_pixel[0],
@@ -40,7 +40,8 @@ class ActionPlanner:
         #self.drift_prior = likelihood_function(space=self.observation_space_x_in_pixel,
         #                                       mu=230,  # true value
         #                                       sigma=50)  # well informed prior
-        self.drift_prior = 230
+        self.drift_prior = 230  # true value
+        self.drift_prior_step = 230/209  # true values
         self.store_drift_movement = False
         self.cumulative_drift_move = 0
         self.drift_direction = None

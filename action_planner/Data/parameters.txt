@@ -1,4 +1,4 @@
 CCLThreshold  0.3
-SoCBoost 0.05
+SoCBoost 0.2
 convolutionGranularity 81
-persistenceTimeWindow 300
+persistenceTimeWindow 18

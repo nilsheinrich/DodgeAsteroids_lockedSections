@@ -27,7 +27,9 @@ question_soc = True
 
 
 class Level:
-    def __init__(self, wall_list, obstacles_list, player_starting_position, drift_ranges, screen, scaling, code, FPS=30,
+    def __init__(self, wall_list, obstacles_list, player_starting_position, drift_ranges,
+                 LL_SoC, HL_SoC,
+                 screen, scaling, code, FPS=30,
                  n_run=0, trial=0, attempt=0, drift_enabled=False):
 
         # experiment information
@@ -87,6 +89,8 @@ class Level:
         # Initiate agent from class ActionPlanner for simulating dynamic decision-making
         parameters = load_parameters_dict("action_planner/Data/parameters.txt")
         self.agent = ActionPlanner(free_parameters=parameters,
+                                   LL_SoC=LL_SoC,
+                                   HL_SoC=HL_SoC,
                                    initial_position_x=self.player.sprite.rect.x + scaling,
                                    observation_space_in_pixel=[observation_space_size_x * scaling,
                                                                observation_space_size_y * scaling])
@@ -207,18 +211,9 @@ class Level:
         # surface_array = np.transpose(pygame.surfarray.array_green(surface_subsection))
         # surface_array[surface_array > 1] = 1
 
-        # check drift start/stop in agent model
-        if self.previous_drift.x == 0 and self.drift.x != 0:  # drift start
-            self.agent.store_drift_movement = True
-            self.agent.cumulative_drift_move += abs(self.horizontal_movement)
-        elif self.previous_drift.x != 0 and self.drift.x == 0:  # drift stop
-            self.agent.store_drift_movement = False
-            self.agent.drift_prior = self.agent.cumulative_drift_move
-            self.agent.cumulative_drift_move = 0
-
         # update agents predictions if horizontal movement present (due to action or drift)
-        if self.horizontal_movement != 0:
-            self.agent.perceived_step_size = abs(self.horizontal_movement)
+        if self.horizontal_movement != 0 and self.drift.x == 0:
+            self.agent.perceived_step_size = abs(self.horizontal_movement) * scaling * velocity
             self.agent.prediction_error()
 
         ###############################################################################################################
@@ -261,15 +256,16 @@ class Level:
                         drift_surface_array = np.transpose(pygame.surfarray.array_green(drift_situation_surface))
                         drift_surface_array[drift_surface_array > 1] = 1
 
-                        best_x, expected_trajectory, kernel_size_x, kernel_size_y = select_drift_path(
+                        best_x, expected_trajectory, self.agent.drift_prior_step, kernel_size_x, kernel_size_y = select_drift_path(
                             PAR=self.agent.parameters,
                             observation_in_pixel=drift_surface_array,
                             drift_prior=self.agent.drift_prior,
                             drift_direction=self.agent.drift_direction,
                             min_percentage_for_rejection=self.agent.min_percentage_for_rejection)
 
-                        self.agent.action_goal = [self.reference_point[0] + best_x * kernel_size_x - kernel_size_x / 2,
-                                                  drift_tile[1]]
+                        self.agent.action_goal = [self.reference_point[0] + (best_x * kernel_size_x) + (kernel_size_x / 2), drift_tile[1]]
+                        #self.agent.action_goal = [self.reference_point[0] + (best_x * kernel_size_x), drift_tile[1]]
+                        #print(f"reference:{self.reference_point[0]}, best x:{best_x}, kernel size x:{kernel_size_x}, action goal:{self.agent.action_goal}")
 
                         self.centering = False
                         self.action_determined = True
@@ -314,10 +310,10 @@ class Level:
         # check for collision threshold of consecutive frames with collision
         if self.frames_with_collision > self.frames_collision_threshold:
             player.crashed = True
+            self.agent.HL_SoC -= (self.agent.HL_SoC / 5)
 
     def check_for_drift(self):
         player = self.player.sprite
-        self.previous_drift = self.drift
         self.drift.x = 0
 
         for sprite in self.drift_tiles.sprites():
@@ -325,6 +321,20 @@ class Level:
                 self.drift.x = -sprite.direction
             elif player.rect.bottom in range(sprite.rect.top, sprite.rect.bottom):
                 self.drift.x = -sprite.direction
+
+        # check drift start/stop in agent model
+        if self.previous_drift.x == 0 and self.drift.x != 0:  # drift start
+            self.agent.store_drift_movement = True
+        elif self.previous_drift.x != 0 and self.drift.x == 0:  # drift stop
+            self.agent.HL_SoC += self.agent.parameters["SoCBoost"]  # boost in HL SoC because of success
+            self.agent.store_drift_movement = False
+            self.agent.drift_prior = self.agent.cumulative_drift_move
+            self.agent.cumulative_drift_move = 0
+
+        if self.agent.store_drift_movement:
+            self.agent.cumulative_drift_move += abs(self.drift.x) * scaling * velocity  # upscaling to pixels
+
+        self.previous_drift = self.drift.copy()
 
     def get_soc_response(self):
         self.SoC = self.agent.HL_SoC
@@ -513,4 +523,4 @@ class Level:
                 display_prior_question(self.display_surface)
                 self.get_prior_response()
 
-        return self.quit, self.level_done
+        return self.quit, self.level_done, self.agent.LL_SoC, self.agent.HL_SoC

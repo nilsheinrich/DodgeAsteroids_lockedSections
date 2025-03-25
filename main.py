@@ -12,7 +12,8 @@ def run_visualization(surface, scaling=1, FPS=30,
                       obstacles_list_file='object_list_0.csv',
                       drift_ranges_file='drift_ranges_0.csv',
                       wall_list_file='walls_dict.csv',
-                      drift_enabled=True, trial=0, attempt=0, n_run=0, code='test'):
+                      LL_SoC=0.5, HL_SoC=0.5,
+                      drift_enabled=False, trial=0, attempt=0, n_run=0, code='test'):
     """
     :param surface: argument for specifying pygame.display object
     :param scaling: int (or float) to scale up on-screen visualization
@@ -45,11 +46,13 @@ def run_visualization(surface, scaling=1, FPS=30,
     # running through game loop
     level = Level(wall_list=wall_list, obstacles_list=obstacles_list,
                   player_starting_position=player_starting_position, drift_ranges=drift_ranges,
-                  drift_enabled=drift_enabled, screen=surface, scaling=scaling, n_run=n_run,
+                  drift_enabled=drift_enabled,
+                  LL_SoC=LL_SoC, HL_SoC=HL_SoC,
+                  screen=surface, scaling=scaling, n_run=n_run,
                   trial=trial, attempt=attempt, code=code, FPS=FPS)
 
-    level_done = run_pygame(surface=surface, scaling=scaling, FPS=FPS, player_positions=player_positions, level=level)
-    return level_done
+    level_done, LL_SoC, HL_SoC = run_pygame(surface=surface, scaling=scaling, FPS=FPS, player_positions=player_positions, level=level)
+    return level_done, LL_SoC, HL_SoC
 
 
 def run_pygame(surface, scaling, FPS, player_positions, level):
@@ -84,9 +87,9 @@ def run_pygame(surface, scaling, FPS, player_positions, level):
 
         # update player position
         current_player_position = player_positions[0]  # not needed but still given in level.run()
-        quit, level_done = level.run(time_played, current_player_position, scaling)
+        quit, level_done, LL_SoC, HL_SoC = level.run(time_played, current_player_position, scaling)
 
         pygame.display.update()
         clock.tick(FPS)
 
-    return level_done
+    return level_done, LL_SoC, HL_SoC

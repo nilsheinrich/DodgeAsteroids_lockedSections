@@ -23,7 +23,7 @@ def pool_observation(observation_in_pixel, convolutionGranularity, resample=Fals
     if resample:
         convolutionGranularity = 180
     else:
-        convolutionGranularity=convolutionGranularity
+        convolutionGranularity = convolutionGranularity
 
     ratio = observation_in_pixel.shape[0] / observation_in_pixel.shape[1]  # ratio of rows to values in rows
 
@@ -54,7 +54,7 @@ def convolve_observation(observation_in_pixel, convolutionGranularity, min_perce
     rejected_action_possibilities = list(zip(*np.where(pooled_observation > min_percentage_for_rejection)))
     action_field = list(zip(*np.where(pooled_observation < min_percentage_for_rejection)))
 
-    if drift_situation:
+    if not drift_situation:
         # delete each possible in possibles that shares second digit with one in rejected and
         # the first digit of which is larger
         rejects = []
@@ -248,35 +248,33 @@ def select_action_goal(PAR: dict, HL_SoC: float, observation_in_pixel, reference
 
 
 def select_drift_path(PAR: dict, observation_in_pixel, drift_prior, drift_direction,
-                      min_percentage_for_rejection: float, debug=False):
+                      min_percentage_for_rejection: float, drift_situation=True, debug=False):
     """
     ...
     """
-    #np.savetxt("observation.csv", observation_in_pixel, delimiter=",")
-
+    if debug:
+        np.savetxt("observation.csv", observation_in_pixel, delimiter=",")
     dx = drift_prior * drift_direction
-    dy = 210  # dy as variable that's passed; dx needs to be on pixel scale
-    # dy = observation_space_size_y
-    # slope = 0.45  # dx/np.shape(observation_in_pixel)[1]  # dx / dy  # expected trajectory
-    slope = dx / dy  # expected trajectory
+    dy = observation_in_pixel.shape[0]  # dx & dy need to be on pixel scale
+    slope = dx / dy  # expected trajectory on pixel scale
 
     convolutionGranularity = PAR["convolutionGranularity"]
 
     kernel_size_x, kernel_size_y, action_field, number_horizontal_strides, number_vertical_strides, rejected_action_possibilities, pooled_observation = \
-        convolve_observation(observation_in_pixel, convolutionGranularity, min_percentage_for_rejection)
+        convolve_observation(observation_in_pixel, convolutionGranularity, min_percentage_for_rejection, drift_situation=drift_situation, resample=False)
 
     # all positions within grid that are =1
     ones_positions = np.argwhere(pooled_observation == 1)
+    #print(f"populated kernels: {ones_positions}")
 
-    # possible starting positions (accounting for end point remains within grid)
     if dx > 0:  # positive slope
-        min_x_start, max_x_start = 0, pooled_observation.shape[1] - slope * number_vertical_strides
+        min_x_start, max_x_start = 1, pooled_observation.shape[1] - abs(slope * observation_in_pixel.shape[0] / kernel_size_x)
     else:  # negative slope
-        min_x_start, max_x_start = abs(slope * number_vertical_strides), pooled_observation.shape[1] - 1
+        min_x_start, max_x_start = abs(slope * observation_in_pixel.shape[0] / kernel_size_x)+1, pooled_observation.shape[1] -1
 
     # identifying potential starting positions
     candidate_xs = np.arange(min_x_start, max_x_start + 1)
-    candidate_array = np.array([(int(x), 0) for x in candidate_xs])
+    candidate_array = np.array([(0, int(x)) for x in candidate_xs])
 
     # store best x with corresponding distance score
     best_x = None  # maybe centered default position?
@@ -287,12 +285,13 @@ def select_drift_path(PAR: dict, observation_in_pixel, drift_prior, drift_direct
     for candidate in candidate_array:
         vector_points = [candidate]
         for stride in range(1, number_vertical_strides + 1):
-            vector_point = [candidate[0] + stride * slope, stride]
+            vector_point = [stride,  stride * slope + candidate[1]]
             vector_points.append(vector_point)
+        #print(f"trajectory: {vector_points}")
 
         if ones_positions.size > 0 and len(vector_points) > 0:
             # compute distances from all points on the vector to all 1s
-            dists = distance.cdist(vector_points, ones_positions, metric='euclidean')
+            dists = distance.cdist(vector_points, ones_positions, metric='euclidean')  # cityblock
 
             # find the closest 1 for each point on the vector
             min_dists_per_point = np.min(dists, axis=1)
@@ -300,12 +299,12 @@ def select_drift_path(PAR: dict, observation_in_pixel, drift_prior, drift_direct
             # total distance along the vector
             total_dist_along_vector = np.sum(min_dists_per_point)
 
-            # print(f"candidate={x}, vector_points={vector_points}, vector_len={len(vector_points)}")
+            print(f"candidate={candidate[1]}, vector_points={vector_points}, vector_len={len(vector_points)}")
 
             # update if this x is better
             if total_dist_along_vector > max_total_dist:
                 max_total_dist = total_dist_along_vector
-                best_x = candidate[0]
+                best_x = candidate[1]
                 expected_trajectory = vector_points
 
     # plotting
@@ -357,4 +356,4 @@ def select_drift_path(PAR: dict, observation_in_pixel, drift_prior, drift_direct
         plt.savefig('plots/drift_situation.png')
         plt.close('all')
 
-    return best_x, expected_trajectory, kernel_size_x, kernel_size_y
+    return best_x, expected_trajectory, slope, kernel_size_x, kernel_size_y
