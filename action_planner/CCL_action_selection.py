@@ -21,7 +21,7 @@ def pool_observation(observation_in_pixel, convolutionGranularity, resample=Fals
     """
 
     if resample:
-        convolutionGranularity = 180
+        convolutionGranularity = 90
     else:
         convolutionGranularity = convolutionGranularity
 
@@ -247,7 +247,7 @@ def select_action_goal(PAR: dict, HL_SoC: float, observation_in_pixel, reference
     return [highest_activation_x, highest_activation_y], action_goal_col, time, HL_SoC
 
 
-def select_drift_path(PAR: dict, observation_in_pixel, drift_prior, drift_direction,
+def select_drift_path(PAR: dict, x_pos, vertical_dist, observation_in_pixel, drift_prior, drift_direction,
                       min_percentage_for_rejection: float, drift_situation=True, debug=False):
     """
     ...
@@ -255,8 +255,8 @@ def select_drift_path(PAR: dict, observation_in_pixel, drift_prior, drift_direct
     if debug:
         np.savetxt("observation.csv", observation_in_pixel, delimiter=",")
     dx = drift_prior * drift_direction
-    dy = observation_in_pixel.shape[0]  # dx & dy need to be on pixel scale
-    slope = dx / dy  # expected trajectory on pixel scale
+    dy = observation_in_pixel.shape[0]  # dx & dy need to be in pixel scale
+    slope = dx / dy  # expected trajectory in pixel scale
 
     convolutionGranularity = PAR["convolutionGranularity"]
 
@@ -265,12 +265,31 @@ def select_drift_path(PAR: dict, observation_in_pixel, drift_prior, drift_direct
 
     # all positions within grid that are =1
     ones_positions = np.argwhere(pooled_observation == 1)
-    #print(f"populated kernels: {ones_positions}")
+    # print(f"populated kernels: {ones_positions}")
 
     if dx > 0:  # positive slope
         min_x_start, max_x_start = 1, pooled_observation.shape[1] - abs(slope * observation_in_pixel.shape[0] / kernel_size_x)
     else:  # negative slope
         min_x_start, max_x_start = abs(slope * observation_in_pixel.shape[0] / kernel_size_x)+1, pooled_observation.shape[1] -1
+
+    # and within dynamic range of x_pos to guarantee that agent makes it to position.
+    # dynamic range is bound to vertical distance to drift section.
+    # (later for effort)
+    agent_pooled_x_pos = math.floor(x_pos / kernel_size_x)
+    pooled_vertical_dist = vertical_dist / kernel_size_x
+    # unintuitive but it's about how far I can still steer horizontally given the vertical distance
+    # print(f"{vertical_dist, kernel_size_y}")
+
+    lower_bound = agent_pooled_x_pos - pooled_vertical_dist
+    upper_bound = agent_pooled_x_pos + pooled_vertical_dist
+    # print(f"min:{min_x_start}, max:{max_x_start}; agent x:{agent_pooled_x_pos}; lb:{lower_bound}, ub:{upper_bound}")
+
+    if min_x_start < lower_bound:
+        min_x_start = math.ceil(lower_bound)
+        # print("adjusted lower bound")
+    elif max_x_start > upper_bound:
+        max_x_start = math.floor(upper_bound)
+        # print("adjusted upper bound")
 
     # identifying potential starting positions
     candidate_xs = np.arange(min_x_start, max_x_start + 1)
@@ -287,7 +306,7 @@ def select_drift_path(PAR: dict, observation_in_pixel, drift_prior, drift_direct
         for stride in range(1, number_vertical_strides + 1):
             vector_point = [stride,  stride * slope + candidate[1]]
             vector_points.append(vector_point)
-        #print(f"trajectory: {vector_points}")
+        # print(f"trajectory: {vector_points}")
 
         if ones_positions.size > 0 and len(vector_points) > 0:
             # compute distances from all points on the vector to all 1s
@@ -299,7 +318,7 @@ def select_drift_path(PAR: dict, observation_in_pixel, drift_prior, drift_direct
             # total distance along the vector
             total_dist_along_vector = np.sum(min_dists_per_point)
 
-            print(f"candidate={candidate[1]}, vector_points={vector_points}, vector_len={len(vector_points)}")
+            # print(f"candidate={candidate[1]}, vector_points={vector_points}, vector_len={len(vector_points)}")
 
             # update if this x is better
             if total_dist_along_vector > max_total_dist:

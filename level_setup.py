@@ -233,8 +233,7 @@ class Level:
             # Drift section of screen but not applying
             elif len(self.visible_drift_tiles) > 0 and self.drift.x == 0:
                 for drift_tile in self.visible_drift_tiles:
-                    if drift_tile[1] - (
-                            5 * scaling) > player.rect.bottom:  # 5: free parameter, when do participants start planning drift section
+                    if drift_tile[1] - (5 * scaling) > player.rect.bottom:  # 5: free parameter, when do participants start planning drift section
                         # condition for full drift section on screen...
                         if drift_tile[1] + (15 * scaling) < (observation_space_size_y - bottom_edge) * scaling:
                             drift_size = 15 * scaling  # 15=y size of drift
@@ -250,14 +249,15 @@ class Level:
                             self.agent.drift_direction = -1
 
                         # convolve drift section
-                        drift_situation = self.reference_point[0], drift_tile[
-                            1], 532, 15 * scaling  # 15: y size of drift section
+                        drift_situation = self.reference_point[0], drift_tile[1], 532, 15 * scaling  # 15: y size of drift section
                         drift_situation_surface = self.display_surface.subsurface(drift_situation)
                         drift_surface_array = np.transpose(pygame.surfarray.array_green(drift_situation_surface))
                         drift_surface_array[drift_surface_array > 1] = 1
 
                         best_x, expected_trajectory, self.agent.drift_prior_step, kernel_size_x, kernel_size_y = select_drift_path(
                             PAR=self.agent.parameters,
+                            x_pos=self.agent.agent_pos_x-self.reference_point[0],
+                            vertical_dist=drift_tile[1]-player.rect.bottom,
                             observation_in_pixel=drift_surface_array,
                             drift_prior=self.agent.drift_prior,
                             drift_direction=self.agent.drift_direction,
