@@ -263,6 +263,13 @@ def select_drift_path(PAR: dict, x_pos, vertical_dist, observation_in_pixel, dri
     kernel_size_x, kernel_size_y, action_field, number_horizontal_strides, number_vertical_strides, rejected_action_possibilities, pooled_observation = \
         convolve_observation(observation_in_pixel, convolutionGranularity, min_percentage_for_rejection, drift_situation=drift_situation, resample=False)
 
+    # get board dimensions
+    height, width = pooled_observation.shape
+
+    # inset horizontal boarders
+    pooled_observation[:, 0] = 1
+    pooled_observation[:, -1] = 1
+
     # all positions within grid that are =1
     ones_positions = np.argwhere(pooled_observation == 1)
     # print(f"populated kernels: {ones_positions}")
@@ -278,11 +285,9 @@ def select_drift_path(PAR: dict, x_pos, vertical_dist, observation_in_pixel, dri
     agent_pooled_x_pos = math.floor(x_pos / kernel_size_x)
     pooled_vertical_dist = vertical_dist / kernel_size_x
     # unintuitive but it's about how far I can still steer horizontally given the vertical distance
-    # print(f"{vertical_dist, kernel_size_y}")
 
     lower_bound = agent_pooled_x_pos - pooled_vertical_dist
     upper_bound = agent_pooled_x_pos + pooled_vertical_dist
-    # print(f"min:{min_x_start}, max:{max_x_start}; agent x:{agent_pooled_x_pos}; lb:{lower_bound}, ub:{upper_bound}")
 
     if min_x_start < lower_bound:
         min_x_start = math.ceil(lower_bound)
@@ -293,38 +298,97 @@ def select_drift_path(PAR: dict, x_pos, vertical_dist, observation_in_pixel, dri
 
     # identifying potential starting positions
     candidate_xs = np.arange(min_x_start, max_x_start + 1)
-    candidate_array = np.array([(0, int(x)) for x in candidate_xs])
 
-    # store best x with corresponding distance score
-    best_x = None  # maybe centered default position?
+    # select and store the best starting position and max smallest distance
+    best_start_x = None
     expected_trajectory = None
-    max_total_dist = 0
+    best_min_distance = -np.inf
 
-    # check every x-position as a candidate for the vector
-    for candidate in candidate_array:
-        vector_points = [candidate]
-        for stride in range(1, number_vertical_strides + 1):
-            vector_point = [stride,  stride * slope + candidate[1]]
-            vector_points.append(vector_point)
-        # print(f"trajectory: {vector_points}")
+    # iterate over possible starting positions
+    for start_x in candidate_xs:
+        # simulate trajectory
+        trajectory = []
+        x, y = start_x, -1  # start above the first row
 
-        if ones_positions.size > 0 and len(vector_points) > 0:
-            # compute distances from all points on the vector to all 1s
-            dists = distance.cdist(vector_points, ones_positions, metric='euclidean')  # cityblock
+        while y < height - 1:  # stop before exceeding the board
+            y += 1  # move down
+            x += slope  # move left or right
+            trajectory.append((y, x))
 
-            # find the closest 1 for each point on the vector
-            min_dists_per_point = np.min(dists, axis=1)
+        trajectory = np.array(trajectory)
+        # print(trajectory)
 
-            # total distance along the vector
-            total_dist_along_vector = np.sum(min_dists_per_point)
+        # Compute the distance from trajectory points to ones_positions
+        distances = distance.cdist(trajectory, ones_positions, metric='euclidean')
 
-            # print(f"candidate={candidate[1]}, vector_points={vector_points}, vector_len={len(vector_points)}")
+        # Find the minimum distance to any "1"
+        min_distance = np.min(distances)
 
-            # update if this x is better
-            if total_dist_along_vector > max_total_dist:
-                max_total_dist = total_dist_along_vector
-                best_x = candidate[1]
-                expected_trajectory = vector_points
+        # Update best position if this one is safer
+        if min_distance > best_min_distance:
+            best_min_distance = min_distance
+            best_start_x = start_x
+            expected_trajectory = trajectory
+
+
+    # if dx > 0:  # positive slope
+    #     min_x_start, max_x_start = 1, pooled_observation.shape[1] - abs(slope * observation_in_pixel.shape[0] / kernel_size_x)
+    # else:  # negative slope
+    #     min_x_start, max_x_start = abs(slope * observation_in_pixel.shape[0] / kernel_size_x)+1, pooled_observation.shape[1] -1
+    #
+    # # and within dynamic range of x_pos to guarantee that agent makes it to position.
+    # # dynamic range is bound to vertical distance to drift section.
+    # # (later for effort)
+    # agent_pooled_x_pos = math.floor(x_pos / kernel_size_x)
+    # pooled_vertical_dist = vertical_dist / kernel_size_x
+    # # unintuitive but it's about how far I can still steer horizontally given the vertical distance
+    # # print(f"{vertical_dist, kernel_size_y}")
+    #
+    # lower_bound = agent_pooled_x_pos - pooled_vertical_dist
+    # upper_bound = agent_pooled_x_pos + pooled_vertical_dist
+    # # print(f"min:{min_x_start}, max:{max_x_start}; agent x:{agent_pooled_x_pos}; lb:{lower_bound}, ub:{upper_bound}")
+    #
+    # if min_x_start < lower_bound:
+    #     min_x_start = math.ceil(lower_bound)
+    #     # print("adjusted lower bound")
+    # elif max_x_start > upper_bound:
+    #     max_x_start = math.floor(upper_bound)
+    #     # print("adjusted upper bound")
+    #
+    # # identifying potential starting positions
+    # candidate_xs = np.arange(min_x_start, max_x_start + 1)
+    # candidate_array = np.array([(0, int(x)) for x in candidate_xs])
+    #
+    # # store best x with corresponding distance score
+    # best_x = None  # maybe centered default position?
+    # expected_trajectory = None
+    # max_total_dist = 0
+    #
+    # # check every x-position as a candidate for the vector
+    # for candidate in candidate_array:
+    #     vector_points = [candidate]
+    #     for stride in range(1, number_vertical_strides + 1):
+    #         vector_point = [stride,  stride * slope + candidate[1]]
+    #         vector_points.append(vector_point)
+    #     # print(f"trajectory: {vector_points}")
+    #
+    #     if ones_positions.size > 0 and len(vector_points) > 0:
+    #         # compute distances from all points on the vector to all 1s
+    #         dists = distance.cdist(vector_points, ones_positions, metric='euclidean')  # cityblock
+    #
+    #         # find the closest 1 for each point on the vector
+    #         min_dists_per_point = np.min(dists, axis=1)
+    #
+    #         # total distance along the vector
+    #         total_dist_along_vector = np.sum(min_dists_per_point)
+    #
+    #         # print(f"candidate={candidate[1]}, vector_points={vector_points}, vector_len={len(vector_points)}")
+    #
+    #         # update if this x is better
+    #         if total_dist_along_vector > max_total_dist:
+    #             max_total_dist = total_dist_along_vector
+    #             best_x = candidate[1]
+    #             expected_trajectory = vector_points
 
     # plotting
     if debug:
@@ -364,6 +428,11 @@ def select_drift_path(PAR: dict, x_pos, vertical_dist, observation_in_pixel, dri
                                          facecolor='r', alpha=0.4)
                 ax.ax_joint.add_patch(rect)
 
+        scaled_expected_trajectory = [np.array([x * kernel_size_x + kernel_size_x/2, y * kernel_size_y]) for y, x in expected_trajectory]
+        for point in scaled_expected_trajectory:
+            # for point in expected_trajectory:
+            ax.ax_joint.scatter(point[0], point[1], color='lime', s=100)
+
         ax.ax_joint.get_xaxis().set_visible(False)
         ax.ax_joint.get_yaxis().set_visible(False)
 
@@ -375,4 +444,4 @@ def select_drift_path(PAR: dict, x_pos, vertical_dist, observation_in_pixel, dri
         plt.savefig('plots/drift_situation.png')
         plt.close('all')
 
-    return best_x, expected_trajectory, slope, kernel_size_x, kernel_size_y
+    return best_start_x, expected_trajectory, slope, kernel_size_x, kernel_size_y

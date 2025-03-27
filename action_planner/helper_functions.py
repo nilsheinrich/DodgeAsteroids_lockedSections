@@ -71,7 +71,8 @@ def bound(low, high, value):
 
 # dict for mapping granularity to mean activation
 convolutionGranularity_activation_dict = {
-    90: 0.08,
+    100: 0.07,
+    90: 0.07,
     81: 0.07,
     72: 0.07,
     56: 0.05,

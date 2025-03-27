@@ -263,7 +263,7 @@ class Level:
                             drift_direction=self.agent.drift_direction,
                             min_percentage_for_rejection=self.agent.min_percentage_for_rejection)
 
-                        self.agent.action_goal = [self.reference_point[0] + (best_x * kernel_size_x) + (kernel_size_x / 2), drift_tile[1]]
+                        self.agent.action_goal = [self.reference_point[0] + best_x * kernel_size_x + kernel_size_x/2, drift_tile[1]]
                         #self.agent.action_goal = [self.reference_point[0] + (best_x * kernel_size_x), drift_tile[1]]
                         #print(f"reference:{self.reference_point[0]}, best x:{best_x}, kernel size x:{kernel_size_x}, action goal:{self.agent.action_goal}")
 
