@@ -34,7 +34,7 @@ def load_parameters_dict(file="none", parameters=None):
             parameters[name] = float(value)
 
     # the following parameters must be included and set in partable
-    known_pars = {"CCLThreshold", "SoCBoost", "convolutionGranularity", "persistenceTimeWindow"}
+    known_pars = {"CCLThreshold", "SoCBoost", "SoCWeightingThreshold", "convolutionGranularity", "persistenceTimeWindow"}
     if known_pars <= parameters.keys():
         return parameters
     else:

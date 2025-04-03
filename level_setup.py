@@ -259,6 +259,7 @@ class Level:
                             x_pos=self.agent.agent_pos_x-self.reference_point[0],
                             vertical_dist=drift_tile[1]-player.rect.bottom,
                             observation_in_pixel=drift_surface_array,
+                            SoC=self.agent.HL_SoC,
                             drift_prior=self.agent.drift_prior,
                             drift_direction=self.agent.drift_direction,
                             min_percentage_for_rejection=self.agent.min_percentage_for_rejection)

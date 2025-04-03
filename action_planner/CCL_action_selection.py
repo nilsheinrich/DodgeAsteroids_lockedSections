@@ -34,7 +34,8 @@ def pool_observation(observation_in_pixel, convolutionGranularity, resample=Fals
     kernel_size_y = math.ceil(np.shape(observation_in_pixel)[0] / number_vertical_strides)
 
     pooled_observation = skimage.measure.block_reduce(observation_in_pixel, (kernel_size_y, kernel_size_x), np.mean)
-    # print(f"pooled_observation: {pooled_observation}, dimensions={len(pooled_observation[0])}*{len(pooled_observation)}")
+    #print(f"pooled_observation: {pooled_observation}, "
+    #      f"dimensions={len(pooled_observation[0])}*{len(pooled_observation)}")
 
     return kernel_size_x, kernel_size_y, pooled_observation, number_horizontal_strides, number_vertical_strides
 
@@ -69,7 +70,7 @@ def convolve_observation(observation_in_pixel, convolutionGranularity, min_perce
         rejected_action_possibilities = rejected_action_possibilities + rejects
 
     # also passing pooled observation
-    pooled_observation = (pooled_observation > min_percentage_for_rejection).astype(int)
+    pooled_observation = (pooled_observation > min_percentage_for_rejection).astype(int)  # cells only have 0 or 1
 
     # print(f"action field: {action_field}; rejected action possibilities: {rejected_action_possibilities}")
 
@@ -247,7 +248,33 @@ def select_action_goal(PAR: dict, HL_SoC: float, observation_in_pixel, reference
     return [highest_activation_x, highest_activation_y], action_goal_col, time, HL_SoC
 
 
-def select_drift_path(PAR: dict, x_pos, vertical_dist, observation_in_pixel, drift_prior, drift_direction,
+def calc_spread(pooled_observation):
+    # Get positions of 1s
+    ones_positions = np.argwhere(pooled_observation == 1)
+
+    if ones_positions.size == 0:
+        return None  # No 1s found, return None or handle separately
+
+    # Compute mean and standard deviation
+    mean_position = np.mean(ones_positions, axis=0)
+    std_deviation = np.std(ones_positions, axis=0)
+
+    # Compute bounding box
+    min_y, min_x = np.min(ones_positions, axis=0)
+    max_y, max_x = np.max(ones_positions, axis=0)
+    bounding_box_area = (max_x - min_x + 1) * (max_y - min_y + 1)
+
+    # Compute density
+    density = len(ones_positions) / bounding_box_area if bounding_box_area > 0 else 0
+
+    # Compute mean pairwise distance using scipy's optimized pdist
+    pairwise_distances = distance.pdist(ones_positions, metric='euclidean')
+    mean_pairwise_distance = np.mean(pairwise_distances) if pairwise_distances.size > 0 else 0
+
+    return mean_position, std_deviation, bounding_box_area, density, mean_pairwise_distance
+
+
+def select_drift_path(PAR: dict, x_pos, vertical_dist, observation_in_pixel, SoC, drift_prior, drift_direction,
                       min_percentage_for_rejection: float, drift_situation=True, debug=False):
     """
     ...
@@ -258,26 +285,95 @@ def select_drift_path(PAR: dict, x_pos, vertical_dist, observation_in_pixel, dri
     dy = observation_in_pixel.shape[0]  # dx & dy need to be in pixel scale
     slope = dx / dy  # expected trajectory in pixel scale
 
-    convolutionGranularity = PAR["convolutionGranularity"]
+    # convolutionGranularity = PAR["convolutionGranularity"]
 
     kernel_size_x, kernel_size_y, action_field, number_horizontal_strides, number_vertical_strides, rejected_action_possibilities, pooled_observation = \
-        convolve_observation(observation_in_pixel, convolutionGranularity, min_percentage_for_rejection, drift_situation=drift_situation, resample=False)
+        convolve_observation(observation_in_pixel, PAR["convolutionGranularity"], min_percentage_for_rejection, drift_situation=drift_situation, resample=False)
+
+    # ACT-R production
+    # dividing pooled_observation
+    num_cols = pooled_observation.shape[1]
+
+    num_sections = 3  # in how many sections is the situation mentally divided
+    # compute section sizes
+    left_size = num_cols // num_sections
+    middle_size = num_cols // num_sections + num_cols % num_sections  # gets the remainder
+    right_size = num_cols // num_sections
+
+    # Split each row accordingly
+    left_section = pooled_observation[:, :left_size]
+    middle_section = pooled_observation[:, left_size:left_size + middle_size]
+    right_section = pooled_observation[:, left_size + middle_size:]
+
+    # print("\nNEW:")
+    # print("\nLeft Section:")
+    # print(left_section, len(np.argwhere(left_section == 1)), calc_spread(left_section))
+
+    # print("\nMiddle Section:")
+    # print(middle_section, len(np.argwhere(middle_section == 1)), calc_spread(middle_section))
+
+    # print("\nRight Section:")
+    # print(right_section, len(np.argwhere(right_section == 1)), calc_spread(right_section))
+
+    # print("\n")
+    # print(f"Where is agent? {x_pos / observation_in_pixel.shape[1]}")
+    # print(f"Bounds: {len(left_section[0])/num_cols, len(left_section[0])/num_cols+len(middle_section[0])/num_cols}")
+
+    hratio_ = x_pos / observation_in_pixel.shape[1]
+    if hratio_ < 1/3:
+        left_effort, middle_effort, right_effort = 0, 1, 2
+    elif hratio_ > 2/3:
+        left_effort, middle_effort, right_effort = 2, 1, 0
+    else:
+        left_effort, middle_effort, right_effort = 1, 0, 1
+
+    left_risk, middle_risk, right_risk = len(np.argwhere(left_section == 1)), len(np.argwhere(middle_section == 1)), len(np.argwhere(right_section == 1))
+    ##################
+
+    # ACT-R production
+    if drift_direction > 0:
+        right_risk += 5  # arbitrarily chosen value
+    elif drift_direction < 0:
+        left_risk += 5
+    ##################
+
+    # ACT-R production
+    # Top-down decision
+    W_risk = 1.0
+    W_effort = 1.0
+
+    if SoC < PAR['SoCWeightingThreshold']:
+        # risk weighted higher
+        W_risk += 1.0
+    else:  # SoC >= PAR['SoCWeightingThreshold']
+        # effort weighted higher
+        W_effort += 1.0
+
+    # compute decision weight for sections
+    decisionValue_left = W_risk*left_risk + W_effort*left_effort
+    decisionValue_middle = W_risk * middle_risk + W_effort * middle_effort
+    decisionValue_right = W_risk * right_risk + W_effort * right_effort
+
+    # how to identify the section pixels based on decisionValues
+    sections = pd.DataFrame(np.array([[left_section.shape[1], left_risk, left_effort, decisionValue_left],
+                                      [middle_section.shape[1], middle_risk, middle_effort, decisionValue_middle],
+                                      [right_section.shape[1], right_risk, right_effort, decisionValue_right]]),
+                            columns=['width', 'risk', 'effort', 'decisionValue'])
+    ##################
 
     # get board dimensions
     height, width = pooled_observation.shape
 
-    # inset horizontal boarders
-    pooled_observation[:, 0] = 1
-    pooled_observation[:, -1] = 1
+    # ?
+    # pooled_observation[-1, 0] = 1
+    # pooled_observation[-1, -1] = 1
 
-    # all positions within grid that are =1
-    ones_positions = np.argwhere(pooled_observation == 1)
-    # print(f"populated kernels: {ones_positions}")
-
+    # ACT-R production
     if dx > 0:  # positive slope
         min_x_start, max_x_start = 1, pooled_observation.shape[1] - abs(slope * observation_in_pixel.shape[0] / kernel_size_x)
     else:  # negative slope
         min_x_start, max_x_start = abs(slope * observation_in_pixel.shape[0] / kernel_size_x)+1, pooled_observation.shape[1] -1
+    ##################
 
     # and within dynamic range of x_pos to guarantee that agent makes it to position.
     # dynamic range is bound to vertical distance to drift section.
@@ -304,6 +400,10 @@ def select_drift_path(PAR: dict, x_pos, vertical_dist, observation_in_pixel, dri
     expected_trajectory = None
     best_min_distance = -np.inf
 
+    # all positions within grid that are =1
+    ones_positions = np.argwhere(pooled_observation == 1)
+    # print(f"populated kernels: {ones_positions}")
+
     # iterate over possible starting positions
     for start_x in candidate_xs:
         # simulate trajectory
@@ -329,6 +429,10 @@ def select_drift_path(PAR: dict, x_pos, vertical_dist, observation_in_pixel, dri
             best_min_distance = min_distance
             best_start_x = start_x
             expected_trajectory = trajectory
+
+    hratio = best_start_x/observation_in_pixel.shape[1]
+    print(f"where is relative start x: {hratio}; direction: {drift_direction}")
+    print(f"N_obs per region: {len(np.argwhere(left_section == 1)), len(np.argwhere(middle_section == 1)), len(np.argwhere(right_section == 1))}")
 
 
     # if dx > 0:  # positive slope
