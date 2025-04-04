@@ -305,20 +305,6 @@ def select_drift_path(PAR: dict, x_pos, vertical_dist, observation_in_pixel, SoC
     middle_section = pooled_observation[:, left_size:left_size + middle_size]
     right_section = pooled_observation[:, left_size + middle_size:]
 
-    # print("\nNEW:")
-    # print("\nLeft Section:")
-    # print(left_section, len(np.argwhere(left_section == 1)), calc_spread(left_section))
-
-    # print("\nMiddle Section:")
-    # print(middle_section, len(np.argwhere(middle_section == 1)), calc_spread(middle_section))
-
-    # print("\nRight Section:")
-    # print(right_section, len(np.argwhere(right_section == 1)), calc_spread(right_section))
-
-    # print("\n")
-    # print(f"Where is agent? {x_pos / observation_in_pixel.shape[1]}")
-    # print(f"Bounds: {len(left_section[0])/num_cols, len(left_section[0])/num_cols+len(middle_section[0])/num_cols}")
-
     hratio_ = x_pos / observation_in_pixel.shape[1]
     if hratio_ < 1/3:
         left_effort, middle_effort, right_effort = 0, 1, 2
@@ -354,17 +340,22 @@ def select_drift_path(PAR: dict, x_pos, vertical_dist, observation_in_pixel, SoC
     decisionValue_middle = W_risk * middle_risk + W_effort * middle_effort
     decisionValue_right = W_risk * right_risk + W_effort * right_effort
 
-    # how to identify the section pixels based on decisionValues
-    sections = pd.DataFrame(np.array([[left_section.shape[1], left_risk, left_effort, decisionValue_left],
-                                      [middle_section.shape[1], middle_risk, middle_effort, decisionValue_middle],
-                                      [right_section.shape[1], right_risk, right_effort, decisionValue_right]]),
-                            columns=['width', 'risk', 'effort', 'decisionValue'])
+    # Identify section with lowest decision value
+    sections = pd.DataFrame(np.array([[0, left_section.shape[1], left_risk, left_effort, decisionValue_left],
+                                      [left_size, middle_section.shape[1], middle_risk, middle_effort, decisionValue_middle],
+                                      [left_size+middle_size, right_section.shape[1], right_risk, right_effort, decisionValue_right]]),
+                            columns=['start_x', 'width', 'risk', 'effort', 'decisionValue'])
+    chosen_section = sections[sections.decisionValue == sections.decisionValue.min()]
+    if len(chosen_section) > 1:  # it might be that the decisionValue is the same for several sections
+        chosen_section = chosen_section.sample(n=1)
+
+    # min_x_start, max_x_start = np.array(chosen_section.start_x), np.array(chosen_section.start_x+chosen_section.width)
     ##################
 
     # get board dimensions
     height, width = pooled_observation.shape
 
-    # ?
+    # induce more distance to bottom walls
     # pooled_observation[-1, 0] = 1
     # pooled_observation[-1, -1] = 1
 
@@ -385,6 +376,7 @@ def select_drift_path(PAR: dict, x_pos, vertical_dist, observation_in_pixel, SoC
     lower_bound = agent_pooled_x_pos - pooled_vertical_dist
     upper_bound = agent_pooled_x_pos + pooled_vertical_dist
 
+    # print(f"min:{min_x_start}, max:{max_x_start}; bounds:{lower_bound}, {upper_bound}")
     if min_x_start < lower_bound:
         min_x_start = math.ceil(lower_bound)
         # print("adjusted lower bound")
@@ -431,68 +423,6 @@ def select_drift_path(PAR: dict, x_pos, vertical_dist, observation_in_pixel, SoC
             expected_trajectory = trajectory
 
     hratio = best_start_x/observation_in_pixel.shape[1]
-    print(f"where is relative start x: {hratio}; direction: {drift_direction}")
-    print(f"N_obs per region: {len(np.argwhere(left_section == 1)), len(np.argwhere(middle_section == 1)), len(np.argwhere(right_section == 1))}")
-
-
-    # if dx > 0:  # positive slope
-    #     min_x_start, max_x_start = 1, pooled_observation.shape[1] - abs(slope * observation_in_pixel.shape[0] / kernel_size_x)
-    # else:  # negative slope
-    #     min_x_start, max_x_start = abs(slope * observation_in_pixel.shape[0] / kernel_size_x)+1, pooled_observation.shape[1] -1
-    #
-    # # and within dynamic range of x_pos to guarantee that agent makes it to position.
-    # # dynamic range is bound to vertical distance to drift section.
-    # # (later for effort)
-    # agent_pooled_x_pos = math.floor(x_pos / kernel_size_x)
-    # pooled_vertical_dist = vertical_dist / kernel_size_x
-    # # unintuitive but it's about how far I can still steer horizontally given the vertical distance
-    # # print(f"{vertical_dist, kernel_size_y}")
-    #
-    # lower_bound = agent_pooled_x_pos - pooled_vertical_dist
-    # upper_bound = agent_pooled_x_pos + pooled_vertical_dist
-    # # print(f"min:{min_x_start}, max:{max_x_start}; agent x:{agent_pooled_x_pos}; lb:{lower_bound}, ub:{upper_bound}")
-    #
-    # if min_x_start < lower_bound:
-    #     min_x_start = math.ceil(lower_bound)
-    #     # print("adjusted lower bound")
-    # elif max_x_start > upper_bound:
-    #     max_x_start = math.floor(upper_bound)
-    #     # print("adjusted upper bound")
-    #
-    # # identifying potential starting positions
-    # candidate_xs = np.arange(min_x_start, max_x_start + 1)
-    # candidate_array = np.array([(0, int(x)) for x in candidate_xs])
-    #
-    # # store best x with corresponding distance score
-    # best_x = None  # maybe centered default position?
-    # expected_trajectory = None
-    # max_total_dist = 0
-    #
-    # # check every x-position as a candidate for the vector
-    # for candidate in candidate_array:
-    #     vector_points = [candidate]
-    #     for stride in range(1, number_vertical_strides + 1):
-    #         vector_point = [stride,  stride * slope + candidate[1]]
-    #         vector_points.append(vector_point)
-    #     # print(f"trajectory: {vector_points}")
-    #
-    #     if ones_positions.size > 0 and len(vector_points) > 0:
-    #         # compute distances from all points on the vector to all 1s
-    #         dists = distance.cdist(vector_points, ones_positions, metric='euclidean')  # cityblock
-    #
-    #         # find the closest 1 for each point on the vector
-    #         min_dists_per_point = np.min(dists, axis=1)
-    #
-    #         # total distance along the vector
-    #         total_dist_along_vector = np.sum(min_dists_per_point)
-    #
-    #         # print(f"candidate={candidate[1]}, vector_points={vector_points}, vector_len={len(vector_points)}")
-    #
-    #         # update if this x is better
-    #         if total_dist_along_vector > max_total_dist:
-    #             max_total_dist = total_dist_along_vector
-    #             best_x = candidate[1]
-    #             expected_trajectory = vector_points
 
     # plotting
     if debug:
