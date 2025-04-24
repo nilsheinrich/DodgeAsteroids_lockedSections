@@ -438,7 +438,8 @@ def select_drift_path(PAR: dict, x_pos, vertical_dist, observation_in_pixel, SoC
 
         plt.style.use("dark_background")
 
-        ax = sns.jointplot(data=populated_space_activations, x="x_coords", y="y_coords", color="w", space=0)
+        ax = sns.jointplot(data=populated_space_activations, x="x_coords", y="y_coords", color="w", space=0, height=2)
+        ax.fig.set_figwidth(6)
 
         for horizontal_stride in range(1, number_horizontal_strides+1):
             ax.ax_joint.axvline(kernel_size_x * horizontal_stride, c="r")
@@ -465,7 +466,7 @@ def select_drift_path(PAR: dict, x_pos, vertical_dist, observation_in_pixel, SoC
         scaled_expected_trajectory = [np.array([x * kernel_size_x + kernel_size_x/2, y * kernel_size_y]) for y, x in expected_trajectory]
         for point in scaled_expected_trajectory:
             # for point in expected_trajectory:
-            ax.ax_joint.scatter(point[0], point[1], color='lime', s=100)
+            ax.ax_joint.scatter(point[0], point[1], color='lime', s=50)
 
         ax.ax_joint.get_xaxis().set_visible(False)
         ax.ax_joint.get_yaxis().set_visible(False)
