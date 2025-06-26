@@ -40,8 +40,8 @@ class ActionPlanner:
         #self.drift_prior = likelihood_function(space=self.observation_space_x_in_pixel,
         #                                       mu=230,  # true value
         #                                       sigma=50)  # well informed prior
-        self.drift_prior = 230  # true value
-        #self.drift_prior_step = 230/209  # true values
+        #self.drift_prior = 230  # true value
+        self.drift_prior = 230/209  # true values
         self.store_drift_movement = False
         self.cumulative_drift_move = 0
         self.drift_direction = None
@@ -93,20 +93,14 @@ class ActionPlanner:
         # currently executed actions; driven by SCL
         self.action = None  # can be None vs. 'Right' vs. 'Left'
 
-    def update_action_goal(self, speed, scaling, horizontal_movement):
+    def update(self, points, speed, scaling, horizontal_movement):
         """
         Due to the environment moving around the action planner, the action goal has to be updated in every time step
         """
-        # oculomotor error (nystagmus - small shifts of fovea while maintaining fixation)
-        # maybe introduce center bias here
-        # offset_x = np.random.randint(-1, 2, 1)[0]  # 2 because exclusive
-        # offset_y = np.random.randint(-1, 2, 1)[0]
-        # vertical movement
-        # self.action_goal[1] -= ((2/3 * scaling) * speed) + offset_y
-        #self.action_goal[1] -= (scaling * speed)  # + offset_y
-        # horizontal movement
-        #self.action_goal[0] += (horizontal_movement * scaling * speed)  # + offset_x
-        #self.action_goal += (horizontal_movement * scaling * speed)
+        points = points.copy()
+        points[:, 0] += horizontal_movement * scaling * speed
+        points[:, 1] -= scaling * speed
+        return points
 
     def assess_action_goal(self, observation_in_pixel, reference, radius=12):  # radius that is =5° visual angle?
         """
@@ -166,7 +160,7 @@ class ActionPlanner:
             self.action = None
         # print(f"Agent wants to take action: {self.action}")
 
-    def prediction_error(self):
+    def prediction_error(self, lik_, prior_, steering=True):
         """
         The agent will always stay at the same position (centered) and because of this what is actually inferred is
         the horizontal movement of the environment.
@@ -174,12 +168,18 @@ class ActionPlanner:
         likelihood is generated based on true step size of environment incorporating visual acuity. 
         """
         likelihood = likelihood_function(space=self.observation_space_x_in_pixel,
-                                         mu=self.perceived_step_size,
+                                         mu=lik_,
                                          sigma=self.visual_acuity)
+        if steering:
+            prior = self.step_size_prior
+        else:
+            prior = likelihood_function(space=self.observation_space_x_in_pixel,
+                                        mu=prior_,
+                                        sigma=self.visual_acuity)
         # posterior = normalized_posterior(prior=self.step_size_prior, likelihood=likelihood)
         # print(self.step_size_prior, posterior)
         # prediction_error = st.wasserstein_distance(self.step_size_prior, posterior)
-        prediction_error = st.wasserstein_distance(self.step_size_prior, likelihood)
+        prediction_error = st.wasserstein_distance(prior, likelihood)
         # print(f"Wasserstein distance: {prediction_error}")
         # prediction_error = st.entropy(pk=self.step_size_prior, qk=posterior)
         # prediction_error = st.entropy(self.step_size_prior, likelihood)
@@ -204,12 +204,15 @@ class ActionPlanner:
             The boost in LL SoC should be higher if a more precise prediction comes true. Shannon 
             entropy increases with increasing standard deviation though...
             """
-            self.LL_SoC += (1 / st.entropy(pk=self.step_size_prior)) / 10
+            self.LL_SoC += (1 / st.entropy(pk=prior)) / 10
             self.LL_SoC = bound(0, 1, self.LL_SoC)  # LL_SoC bottoms at 0.0 and tops at 1.0
 
         # update prior in self.step_size_prior with new posterior
-        posterior = normalized_posterior(prior=self.step_size_prior, likelihood=likelihood)
-        self.step_size_prior = posterior
+        if steering:
+            posterior = normalized_posterior(prior=self.step_size_prior, likelihood=likelihood)
+            self.step_size_prior = posterior
+        # else:
+            # update drift prior!
 
-        self.prediction_errors.append(prediction_error)  # storing prediction errors
+        # self.prediction_errors.append(prediction_error)  # storing prediction errors
         return prediction_error

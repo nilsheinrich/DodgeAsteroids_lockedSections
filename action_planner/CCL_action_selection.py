@@ -274,14 +274,15 @@ def calc_spread(pooled_observation):
     return mean_position, std_deviation, bounding_box_area, density, mean_pairwise_distance
 
 
-def select_drift_path(PAR: dict, x_pos, vertical_dist, observation_in_pixel, SoC, drift_prior, drift_direction,
+def select_drift_path(PAR: dict, x_pos, vertical_dist, observation_in_pixel, #SoC,
+                      drift_prior, drift_direction,
                       min_percentage_for_rejection: float, drift_situation=True, debug=False):
     """
     ...
     """
     if debug:
         np.savetxt("observation.csv", observation_in_pixel, delimiter=",")
-    dx = drift_prior * drift_direction
+    dx = drift_prior*210 * drift_direction  # with 210 being vertical drift size
     dy = observation_in_pixel.shape[0]  # dx & dy need to be in pixel scale
     slope = dx / dy  # expected trajectory in pixel scale
 
@@ -292,62 +293,62 @@ def select_drift_path(PAR: dict, x_pos, vertical_dist, observation_in_pixel, SoC
 
     # ACT-R production
     # dividing pooled_observation
-    num_cols = pooled_observation.shape[1]
-
-    num_sections = 3  # in how many sections is the situation mentally divided
-    # compute section sizes
-    left_size = num_cols // num_sections
-    middle_size = num_cols // num_sections + num_cols % num_sections  # gets the remainder
-    right_size = num_cols // num_sections
-
-    # Split each row accordingly
-    left_section = pooled_observation[:, :left_size]
-    middle_section = pooled_observation[:, left_size:left_size + middle_size]
-    right_section = pooled_observation[:, left_size + middle_size:]
-
-    hratio_ = x_pos / observation_in_pixel.shape[1]
-    if hratio_ < 1/3:
-        left_effort, middle_effort, right_effort = 0, 1, 2
-    elif hratio_ > 2/3:
-        left_effort, middle_effort, right_effort = 2, 1, 0
-    else:
-        left_effort, middle_effort, right_effort = 1, 0, 1
-
-    left_risk, middle_risk, right_risk = len(np.argwhere(left_section == 1)), len(np.argwhere(middle_section == 1)), len(np.argwhere(right_section == 1))
-    ##################
-
-    # ACT-R production
-    if drift_direction > 0:
-        right_risk += 5  # arbitrarily chosen value
-    elif drift_direction < 0:
-        left_risk += 5
-    ##################
-
-    # ACT-R production
-    # Top-down decision
-    W_risk = 1.0
-    W_effort = 1.0
-
-    if SoC < PAR['SoCWeightingThreshold']:
-        # risk weighted higher
-        W_risk += 1.0
-    else:  # SoC >= PAR['SoCWeightingThreshold']
-        # effort weighted higher
-        W_effort += 1.0
-
-    # compute decision weight for sections
-    decisionValue_left = W_risk*left_risk + W_effort*left_effort
-    decisionValue_middle = W_risk * middle_risk + W_effort * middle_effort
-    decisionValue_right = W_risk * right_risk + W_effort * right_effort
-
-    # Identify section with lowest decision value
-    sections = pd.DataFrame(np.array([[0, left_section.shape[1], left_risk, left_effort, decisionValue_left],
-                                      [left_size, middle_section.shape[1], middle_risk, middle_effort, decisionValue_middle],
-                                      [left_size+middle_size, right_section.shape[1], right_risk, right_effort, decisionValue_right]]),
-                            columns=['start_x', 'width', 'risk', 'effort', 'decisionValue'])
-    chosen_section = sections[sections.decisionValue == sections.decisionValue.min()]
-    if len(chosen_section) > 1:  # it might be that the decisionValue is the same for several sections
-        chosen_section = chosen_section.sample(n=1)
+    # num_cols = pooled_observation.shape[1]
+    #
+    # num_sections = 3  # in how many sections is the situation mentally divided
+    # # compute section sizes
+    # left_size = num_cols // num_sections
+    # middle_size = num_cols // num_sections + num_cols % num_sections  # gets the remainder
+    # right_size = num_cols // num_sections
+    #
+    # # Split each row accordingly
+    # left_section = pooled_observation[:, :left_size]
+    # middle_section = pooled_observation[:, left_size:left_size + middle_size]
+    # right_section = pooled_observation[:, left_size + middle_size:]
+    #
+    # hratio_ = x_pos / observation_in_pixel.shape[1]
+    # if hratio_ < 1/3:
+    #     left_effort, middle_effort, right_effort = 0, 1, 2
+    # elif hratio_ > 2/3:
+    #     left_effort, middle_effort, right_effort = 2, 1, 0
+    # else:
+    #     left_effort, middle_effort, right_effort = 1, 0, 1
+    #
+    # left_risk, middle_risk, right_risk = len(np.argwhere(left_section == 1)), len(np.argwhere(middle_section == 1)), len(np.argwhere(right_section == 1))
+    # ##################
+    #
+    # # ACT-R production
+    # if drift_direction > 0:
+    #     right_risk += 5  # arbitrarily chosen value
+    # elif drift_direction < 0:
+    #     left_risk += 5
+    # ##################
+    #
+    # # ACT-R production
+    # # Top-down decision
+    # W_risk = 1.0
+    # W_effort = 1.0
+    #
+    # if SoC < PAR['SoCWeightingThreshold']:
+    #     # risk weighted higher
+    #     W_risk += 1.0
+    # else:  # SoC >= PAR['SoCWeightingThreshold']
+    #     # effort weighted higher
+    #     W_effort += 1.0
+    #
+    # # compute decision weight for sections
+    # decisionValue_left = W_risk*left_risk + W_effort*left_effort
+    # decisionValue_middle = W_risk * middle_risk + W_effort * middle_effort
+    # decisionValue_right = W_risk * right_risk + W_effort * right_effort
+    #
+    # # Identify section with lowest decision value
+    # sections = pd.DataFrame(np.array([[0, left_section.shape[1], left_risk, left_effort, decisionValue_left],
+    #                                   [left_size, middle_section.shape[1], middle_risk, middle_effort, decisionValue_middle],
+    #                                   [left_size+middle_size, right_section.shape[1], right_risk, right_effort, decisionValue_right]]),
+    #                         columns=['start_x', 'width', 'risk', 'effort', 'decisionValue'])
+    # chosen_section = sections[sections.decisionValue == sections.decisionValue.min()]
+    # if len(chosen_section) > 1:  # it might be that the decisionValue is the same for several sections
+    #     chosen_section = chosen_section.sample(n=1)
 
     # min_x_start, max_x_start = np.array(chosen_section.start_x), np.array(chosen_section.start_x+chosen_section.width)
     ##################
@@ -422,7 +423,7 @@ def select_drift_path(PAR: dict, x_pos, vertical_dist, observation_in_pixel, SoC
             best_start_x = start_x
             expected_trajectory = trajectory
 
-    hratio = best_start_x/observation_in_pixel.shape[1]
+    # hratio = best_start_x/observation_in_pixel.shape[1]
 
     # plotting
     if debug:

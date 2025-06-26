@@ -9,8 +9,8 @@ from ingame_objects.drift_tiles import DriftTile
 from ingame_objects.particles import Particle
 from ingame_objects.lines import Line
 from displays import display_soc_question, display_prior_question
-from helper_functions import degree_to_pixel
-from draw_transparent_shapes import draw_rect_alpha, draw_polygon_alpha, draw_circle_alpha
+#from helper_functions import degree_to_pixel
+from draw_transparent_shapes import draw_rect_alpha, draw_polygon_alpha#, draw_circle_alpha
 from config import *
 # agent
 from action_planner.action_planner import ActionPlanner
@@ -98,6 +98,7 @@ class Level:
 
         self.action_determined = False
         self.centering = True
+        self.selected = None
 
         # pandas Dataframe in which data of each frame will be stored
         self.columns = ['trial', 'attempt', 'time_played', 'level_size_y', 'player_pos', 'collision', 'current_input',
@@ -201,7 +202,7 @@ class Level:
         player = self.player.sprite
 
         # get reference point
-        self.reference_point = (self.walls.sprites()[-2].rect.x + scaling, 236)
+        self.reference_point = (self.walls.sprites()[-2].rect.x + scaling, player.rect.bottom)
         # 236 being player.sprite.rect.bottom after approach at the start of level
         # 208 is player.sprite.rect.top; player included in goal-driven visual environment subsection
 
@@ -211,10 +212,31 @@ class Level:
         # surface_array = np.transpose(pygame.surfarray.array_green(surface_subsection))
         # surface_array[surface_array > 1] = 1
 
-        # update agents predictions if horizontal movement present (due to action or drift)
+        # update agents predictions if horizontal movement present due to action
         if self.horizontal_movement != 0 and self.drift.x == 0:
             self.agent.perceived_step_size = abs(self.horizontal_movement) * scaling * velocity
-            self.agent.prediction_error()
+            self.agent.prediction_error(lik_=self.agent.perceived_step_size, prior_=None, steering=True)
+
+        # monitor predicted trajectory; check if predicted trajectory comes true
+        if self.horizontal_movement != 0 and self.drift.x != 0:
+            if self.selected is not None and len(self.selected) > 0:
+                first_trajectory_point = self.selected[0]
+                player_center_x, player_center_y = player.rect.top + agent_size_y / 2, player.rect.left + agent_size_x / 2
+                if first_trajectory_point[1] <= player_center_y:
+                    self.agent.prediction_error(lik_=player_center_x,
+                                                prior_=first_trajectory_point[0]-self.reference_point[0],
+                                                steering=False)
+                    self.selected = self.selected[1:]
+                    if self.selected.shape[0] == 0:
+                        self.selected = None
+
+            # check for self.selected first point, if it's on the height  of spaceship center point
+        #print(player.rect.top+agent_size_y/2, player.rect.left+agent_size_x/2)  # spaceship center point
+            # prediction error
+            # remove first point from self.selected
+        if self.selected is not None:
+            self.selected = self.agent.update(self.selected, velocity, scaling, self.horizontal_movement)
+
 
         ###############################################################################################################
         ### Action selection ###
@@ -230,7 +252,7 @@ class Level:
                 self.action_determined = True
                 # print("No Drift on screen")
 
-            # Drift section of screen but not applying
+            # Drift section on screen but not applying
             elif len(self.visible_drift_tiles) > 0 and self.drift.x == 0:
                 for drift_tile in self.visible_drift_tiles:
                     if drift_tile[1] - (5 * scaling) > player.rect.bottom:  # 5: free parameter, when do participants start planning drift section
@@ -249,20 +271,22 @@ class Level:
                             self.agent.drift_direction = -1
 
                         # convolve drift section
+                        #print(space between walls)! = 532?
                         drift_situation = self.reference_point[0], drift_tile[1], 532, 15 * scaling  # 15: y size of drift section
                         drift_situation_surface = self.display_surface.subsurface(drift_situation)
                         drift_surface_array = np.transpose(pygame.surfarray.array_green(drift_situation_surface))
                         drift_surface_array[drift_surface_array > 1] = 1
 
-                        best_x, expected_trajectory, self.agent.drift_prior_step, kernel_size_x, kernel_size_y = select_drift_path(
+                        best_x, expected_trajectory, self.agent.drift_prior, kernel_size_x, kernel_size_y = select_drift_path(
                             PAR=self.agent.parameters,
                             x_pos=self.agent.agent_pos_x-self.reference_point[0],
                             vertical_dist=drift_tile[1]-player.rect.bottom,
                             observation_in_pixel=drift_surface_array,
-                            SoC=self.agent.HL_SoC,
+                            #SoC=self.agent.HL_SoC,
                             drift_prior=self.agent.drift_prior,
                             drift_direction=self.agent.drift_direction,
                             min_percentage_for_rejection=self.agent.min_percentage_for_rejection)
+                        print(f"perceived slope: {self.agent.drift_prior}")
 
                         self.agent.action_goal = [self.reference_point[0] + best_x * kernel_size_x + kernel_size_x/2, drift_tile[1]]
                         #self.agent.action_goal = [self.reference_point[0] + (best_x * kernel_size_x), drift_tile[1]]
@@ -271,6 +295,24 @@ class Level:
                         self.centering = False
                         self.action_determined = True
                         # print("Incoming Drift situation")
+
+                        # monitoring trajectory
+                        n_points_total = expected_trajectory.shape[0]
+                        n_keep = int(np.round((1 - self.agent.HL_SoC) * (n_points_total - 1))) + 1
+                        # select evenly spaced points, always including last point
+                        indices = np.linspace(0, n_points_total - 1, n_keep, dtype=int)
+                        selected = expected_trajectory[indices]
+
+                        # map selected onto pixel map
+                        y = selected[:, 0]
+                        x = selected[:, 1]
+                        transformed = np.column_stack([
+                            self.reference_point[0] + x * kernel_size_x + kernel_size_x/2,
+                            y * kernel_size_y + drift_tile[1]
+                        ])
+                        self.selected = transformed
+                        # call prediction error on self.selected...
+
                         break
                 # otherwise drift section not yet on screen completely, idling/centering
                 if not self.action_determined:
@@ -463,7 +505,7 @@ class Level:
                     self.finish_line.update(velocity, scaling, self.horizontal_movement)
 
                     # update action goal
-                    # self.agent.update_action_goal(velocity, scaling, self.horizontal_movement)
+                    # self.agent.action_goal = update(self.agent.action_goal, velocity, scaling, self.horizontal_movement)
 
                 # check for collision
                 self.check_for_collision()
